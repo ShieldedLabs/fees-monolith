@@ -1,0 +1,41 @@
+[package]
+name = "integration-tests"
+description = "Crate containing Zaino's integration-tests."
+publish = false
+
+authors = { workspace = true }
+repository = { workspace = true }
+homepage = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+version = { workspace = true }
+
+[dev-dependencies]
+anyhow = { workspace = true }
+
+# Test utility
+zainod = { workspace = true }
+zaino-testutils = { workspace = true }
+zaino-fetch = { workspace = true }
+zaino-proto.workspace = true
+zaino-common.workspace = true
+zaino-state = { workspace = true, features = ["test_dependencies"] }
+zebra-chain.workspace = true
+zebra-state.workspace = true
+zebra-rpc.workspace = true
+zip32 = {workspace = true}
+
+core2 = { workspace = true }
+prost = { workspace = true }
+serde_json = { workspace = true, features = ["preserve_order"] }
+futures.workspace = true
+tempfile.workspace = true
+tower = { workspace = true, features = ["buffer", "util"] }
+hex = { workspace = true }
+
+# Runtime
+tokio = { workspace = true }
+
+# Zingo-infra
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "20f3c206321825952fdf2d9d84947f5c9d2a1cf4" }
+zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "20f3c206321825952fdf2d9d84947f5c9d2a1cf4" }
