@@ -1,0 +1,27 @@
+# Zaino Configuration — Dynamic Fees Container
+#
+# Talks to zebrad on the shared Docker network (zcash_default).
+
+backend = 'fetch'
+network = 'Mainnet'
+
+[grpc_settings]
+listen_address = '0.0.0.0:8137'
+
+[json_server_settings]
+json_rpc_listen_address = '0.0.0.0:8088'
+
+[validator_settings]
+validator_jsonrpc_listen_address = 'zebrad:8232'
+
+[service]
+timeout = 30
+channel_size = 32
+
+[storage.cache]
+capacity = 10000
+shard_power = 4
+
+[storage.database]
+path = '/home/container_user/.cache/zaino'
+size = 384

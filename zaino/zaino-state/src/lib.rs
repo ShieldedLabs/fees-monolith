@@ -88,4 +88,6 @@ pub use stream::{
 
 pub(crate) mod broadcast;
 
+pub mod fee_estimator;
+
 pub(crate) mod utils;

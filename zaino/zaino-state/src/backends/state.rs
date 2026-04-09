@@ -1893,6 +1893,14 @@ impl ZcashIndexer for StateServiceSubscriber {
             .map_err(|e| StateServiceError::Custom(e.to_string()))
     }
 
+    async fn z_get_standard_fees(
+        &self,
+    ) -> Result<crate::fee_estimator::StandardFeesResponse, Self::Error> {
+        Err(StateServiceError::Custom(
+            "z_get_standard_fees is not yet implemented for the state backend".to_string(),
+        ))
+    }
+
     // Helper function, to get the chain height in rpc implementations
     async fn chain_height(&self) -> Result<Height, Self::Error> {
         let mut state = self.read_state_service.clone();

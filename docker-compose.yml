@@ -1,0 +1,42 @@
+# Dynamic Fees — Zaino with z_getstandardfees
+#
+# Shares the existing zcash mainnet network so it can reach zebrad.
+# Build from local source (includes fee estimator changes).
+#
+# Usage:
+#   docker compose build
+#   docker compose up -d
+#   curl -X POST http://127.0.0.1:18088 \
+#     -H "Content-Type: application/json" \
+#     -d '{"jsonrpc":"2.0","method":"z_getstandardfees","id":1}'
+
+services:
+  zaino-fees:
+    build:
+      context: ./zaino
+      dockerfile: Dockerfile
+      args:
+        NO_TLS: "true"
+    depends_on: []
+    restart: unless-stopped
+    environment:
+      - RUST_LOG=info
+      - ZAINO_BACKEND=fetch
+      - ZAINO_NETWORK=Mainnet
+      - ZAINO_VALIDATOR_SETTINGS__VALIDATOR_JSONRPC_LISTEN_ADDRESS=zebrad:8232
+      - ZAINO_GRPC_SETTINGS__LISTEN_ADDRESS=0.0.0.0:8137
+      - ZAINO_JSON_SERVER_SETTINGS__JSON_RPC_LISTEN_ADDRESS=0.0.0.0:8088
+    volumes:
+      - /Users/mark/.cache/zaino:/home/container_user/.cache/zaino
+      - ./config/zainod.toml:/etc/zaino/zainod.toml:ro
+    command: ["start", "--config", "/etc/zaino/zainod.toml"]
+    ports:
+      - "18137:8137"  # gRPC
+      - "18088:8088"  # JSON-RPC (z_getstandardfees)
+
+networks:
+  default:
+    external: true
+    name: zcash_default
+
+volumes: {}
