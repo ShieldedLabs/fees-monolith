@@ -1,286 +1,239 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Live Lab | Zcash Dynamic Fees Lab</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Zcash Dynamic Fees</title>
+  <meta name="description" content="Live fee estimation for Zcash. See what transactions cost right now and learn how to integrate z_getstandardfees into your wallet.">
   <link rel="stylesheet" href="style.css">
 </head>
-
-<!--
-  let x = min(A50)
-
-  let C1 = count(x ... x * 10)
-  let C2 = count(x * 10 ...)
-  let C3 = count(synthetic filler)
-
-  let marginal_fee = factor of 10 round( (x * C1) + (x * 10 * C2) + (floor_price * C3) ) / (C1 + C2 + C3) )
-    - Unoccupoed bytes divided by 1000
--->
-
 <body>
-  <div class="page-header">
-    <img src="shield.png" title="Shielded Labs" alt="Shielded Labs" class="shield-logo">
-    <div class="page-header__text">
-      <span class="supertitle">The living, interactive</span>
-      <h1>Zcash Dynamic Fees Lab</h1>
+
+<header>
+  <div class="container">
+    <div class="logo">
+      <img src="shield.png" alt="Zcash" width="32" height="32">
+      <span>Dynamic Fees</span>
     </div>
-    <nav class="page-header__nav" aria-label="Primary">
-      <a href="/" aria-current="page">Live Lab</a>
-      <a href="/proposal.html">Design Spec</a>
-      <a href="/calculator.html">Modeling &amp; Ideas</a>
-      <a href="/zip-proposal.html">ZIP Draft</a>
+    <nav>
+      <a href="#try-it">Try It</a>
+      <a href="#how-it-works">How It Works</a>
+      <a href="#roadmap">Roadmap</a>
     </nav>
   </div>
+</header>
 
-  <div class="app-layout">
-    <main>
-      <section>
-        <h2>Live Fee Dashboard</h2>
-        <p>
-          This page answers one question first: what are fees right now, and what should a wallet show users?
-          It summarizes current block utilization, median-based fee signals, and ZIP-317 quick estimates.
-        </p>
-        <h3>How to read this page</h3>
-        <ol>
-          <li>Check <strong>Network Congestion</strong> to see current block pressure.</li>
-          <li>Use <strong>Live Lane Quotes</strong> for baseline and fast-lane pricing.</li>
-          <li>Use the <strong>ZIP-317 Quick Fee Check</strong> for action-count estimates.</li>
-        </ol>
-
-        <h3>ZIP-317 Quick Fee Check</h3>
-        <div id="zip-317-demo">
-          <section class="zip-demo">
-            <div class="zip-demo__grid">
-              <div>
-                <label>Actions
-                  <input type="number" id="zip-actions" min="0" value="2" aria-label="Action count">
-                </label>
-              </div>
-              <div class="zip-demo__result">
-                <div><strong id="zip-fee-total">10,000 zats</strong> <small id="zip-fee-usd" class="muted"></small></div>
-              </div>
-            </div>
-          </section>
-        </div>
-      </section>
-      <aside>
-        <h2>Live Lane Quotes</h2>
-        <div class="pmp-grid">
-          <article class="pmp-card" data-lane="standard">
-            <div class="lane-top">
-              <span>Standard (Synthetic Floor Model)</span>
-              <div class="lane-meta"></div>
-            </div>
-            <div class="lane-bottom">
-              <div class="lane-price" id="pmp-standard-fee">Waiting for data…</div>
-            </div>
-            <small id="pmp-standard-desc">Waiting for data…</small>
-          </article>
-        </div>
-
-        <div class="pmp-grid">
-          <article class="pmp-card" data-lane="standard">
-            <div class="lane-top">
-              <span>Marginal Fee (Observed Median)</span>
-              <div class="lane-meta-true-median-bucketed"></div>
-            </div>
-            <div class="lane-bottom">
-              <div class="lane-price" id="pmp-standard-fee-bucketed">Waiting for data…</div>
-            </div>
-            <small id="pmp-standard-desc-bucketed">Waiting for data…</small>
-          </article>
-          <article class="pmp-card" data-lane="priority">
-            <div class="lane-top">
-              <span>Express</span>
-              <div class="lane-meta"></div>
-            </div>
-            <div class="lane-bottom">
-              <div class="lane-price" id="pmp-priority-fee">Waiting for data…</div>
-            </div>
-            <small id="pmp-priority-desc">Waiting for data…</small>
-          </article>
-        </div>
-      </aside>
-    </main>
-
-    <main>
-      <section>
-        <h2>Network Congestion</h2>
-        <p>
-          Block utilization below tracks the effective 50-block lookback window used in fee calculations.
-          Lower utilization generally means baseline fees can clear reliably; sustained high utilization
-          indicates competition for inclusion.
-        </p>
-      </section>
-      <aside>
-        <h4>Block congestion over the last 50 blocks: <span id="blocks-congestion">—</span></h4>
-        <div class="blocks-chart" id="blocks-chart">
-          <div class="blocks-chart__bars" id="blocks-chart-bars">
-            <div class="blocks-chart__empty">Loading block window…</div>
-          </div>
-        </div>
-        <p class="table-caption" id="blocks-chart-note">Data live from mainnet.</p>
-      </aside>
-    </main>
-
-    <main>
-      <section>
-        <h2>Core Market Stats</h2>
-        <div class="mempool-table-wrapper">
-          <table class="mempool-table" aria-label="Core market statistics">
-            <tbody>
-              <tr>
-                <th>Total transactions in lookback window</th>
-                <td id="total-tx-count">—</td>
-              </tr>
-              <tr>
-                <th>Average tx size (KB)</th>
-                <td id="avg-tx-size-kb">—</td>
-              </tr>
-              <tr>
-                <th>Median fee per action</th>
-                <td><span id="avg-fee-per-action">—</span> <span class="muted" id="avg-fee-per-action-usd"></span></td>
-              </tr>
-              <tr>
-                <th>Synthetic transactions</th>
-                <td>
-                  <span id="synthetic-transaction-count">—</span> at
-                  <select id="floor-price-select" aria-label="Floor fee per transaction (zats)">
-                    <option value="5">5 zats / 0.05 µZEC</option>
-                    <option value="10" selected>10 zats / 0.1 µZEC</option>
-                    <option value="100">100 zats / 1 µZEC</option>
-                    <option value="1000">1000 zats / 10 µZEC</option>
-                  </select>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <h3>Privacy Entropy Snapshot</h3>
-        <div class="mempool-table-wrapper">
-          <table class="mempool-table" aria-label="Entropy reduction calculation">
-            <tbody>
-              <tr>
-                <th>Current fee entropy (bits)</th>
-                <td id="fee-entropy-current-table">—</td>
-              </tr>
-              <tr>
-                <th>Consensus-enforced bucketed fee entropy (bits)</th>
-                <td id="fee-entropy-bucketed-table">—</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-      <aside>
-        <h2>Network Sustainability Snapshot</h2>
-        <div class="mempool-table-wrapper">
-          <table class="mempool-table" aria-label="Network sustainability metrics">
-            <tbody>
-              <tr>
-                <th>NSM window blocks</th>
-                <td id="nsm-window">55</td>
-              </tr>
-              <tr>
-                <th>Estimated recycle amount</th>
-                <td id="nsm-recycle">—</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p class="table-caption">See the full rationale in the Design Spec page.</p>
-      </aside>
-    </main>
+<!-- ======== HERO ======== -->
+<section id="hero">
+  <div class="container">
+    <h1>What does a Zcash transaction cost right now?</h1>
+    <div class="fee-cards">
+      <div class="fee-card" id="standard-card">
+        <div class="card-label">Standard Fee</div>
+        <div class="card-value" id="standard-fee">--</div>
+        <div class="card-unit">zats per action</div>
+        <div class="card-usd" id="standard-usd"></div>
+      </div>
+      <div class="fee-card muted" id="express-card">
+        <div class="card-label">Express Fee</div>
+        <div class="card-value" id="express-fee">&mdash;</div>
+        <div class="card-unit">zats per action</div>
+        <div class="card-usd" id="express-usd"></div>
+        <div class="card-note" id="express-note">Appears when the network is congested</div>
+      </div>
+    </div>
+    <div class="status-bar">
+      <span class="status-dot" id="status-dot"></span>
+      <span id="status-text">Connecting...</span>
+      <span class="separator">|</span>
+      <span>Block <code id="block-height">--</code></span>
+      <span class="separator">|</span>
+      <span>Estimator <code id="estimator-version">--</code></span>
+    </div>
   </div>
+</section>
 
-  <script>
-    (() => {
-      const hash = window.location.hash.replace('#', '');
-      if (!hash) return;
+<!-- ======== TRY IT ======== -->
+<section id="try-it">
+  <div class="container">
+    <h2>Call it yourself</h2>
+    <p>Three implementations, same fee data. Pick the one your stack speaks.</p>
 
-      const proposalHashes = new Set([
-        'background',
-        'early-days',
-        'enter-zip-317-and-actions',
-        'current-day',
-        'goals',
-        'naive',
-        'prior-art',
-        'proposal',
-        'next-steps',
-      ]);
-      const modelingHashes = new Set([
-        'other-interesting-ideas',
-        'difficulty-as-price-oracle',
-        'inverse-cramer-lundberg',
-        'per-block-congestion',
-      ]);
+    <div class="tabs">
+      <button class="tab active" data-tab="zebra">Zebra</button>
+      <button class="tab" data-tab="zaino">Zaino</button>
+      <button class="tab" data-tab="lightwalletd">lightwalletd</button>
+    </div>
 
-      if (proposalHashes.has(hash)) {
-        window.location.replace(`proposal.html#${hash}`);
-      } else if (modelingHashes.has(hash)) {
-        window.location.replace(`calculator.html#${hash}`);
-      }
-    })();
-  </script>
+    <div class="tab-content active" id="tab-zebra">
+      <div class="code-block">
+        <div class="code-header">
+          <span>JSON-RPC</span>
+          <button class="copy-btn" data-target="code-zebra">Copy</button>
+        </div>
+        <pre><code id="code-zebra">curl -X POST http://your-node:8232 \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"z_getstandardfees","id":1}'</code></pre>
+      </div>
+    </div>
 
-  <script src="mempool.js"></script>
+    <div class="tab-content" id="tab-zaino">
+      <div class="code-block">
+        <div class="code-header">
+          <span>JSON-RPC</span>
+          <button class="copy-btn" data-target="code-zaino">Copy</button>
+        </div>
+        <pre><code id="code-zaino">curl -X POST http://your-zaino:8088 \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"z_getstandardfees","id":1}'</code></pre>
+      </div>
+    </div>
 
-  <script>
-    (() => {
-      const ZATS_PER_ZEC = 1e8;
-      const els = {
-        actions: document.getElementById('zip-actions'),
-        marginal: { value: 5000 },
-        grace: { value: 2 },
-        total: document.getElementById('zip-fee-total'),
-        usd: document.getElementById('zip-fee-usd'),
-      };
-      if (!els.actions) return;
+    <div class="tab-content" id="tab-lightwalletd">
+      <div class="code-block">
+        <div class="code-header">
+          <span>gRPC</span>
+          <button class="copy-btn" data-target="code-lwd">Copy</button>
+        </div>
+        <pre><code id="code-lwd">grpcurl -plaintext your-lightwalletd:9067 \
+  cash.z.wallet.sdk.rpc.CompactTxStreamer/GetStandardFees</code></pre>
+      </div>
+    </div>
 
-      const fmt = new Intl.NumberFormat('en-US');
+    <div class="response-block">
+      <div class="code-header">
+        <span>Live Response</span>
+        <span class="live-dot"></span>
+      </div>
+      <pre><code id="live-response">// waiting for data...</code></pre>
+    </div>
+  </div>
+</section>
 
-      function compute() {
-        const actions = Math.max(0, Number(els.actions.value) || 0);
-        const marginal = Math.max(0, Number(els.marginal.value) || 0);
-        const grace = Math.max(0, Number(els.grace.value) || 0);
-        const payingActions = Math.max(actions, grace);
-        const totalZats = payingActions * marginal;
-        if (els.total) els.total.textContent = `${fmt.format(totalZats)} zats`;
-        if (els.usd && window.latestPriceUsd) {
-          const usd = (totalZats / ZATS_PER_ZEC) * window.latestPriceUsd;
-          els.usd.textContent = `≈ $${usd.toFixed(2)}`;
-        } else if (els.usd) {
-          els.usd.textContent = '';
-        }
-      }
-      window.__zipCompute = compute;
+<!-- ======== HOW IT WORKS ======== -->
+<section id="how-it-works">
+  <div class="container">
+    <h2>The algorithm in 60 seconds</h2>
 
-      ['input', 'change'].forEach((evt) => {
-        els.actions?.addEventListener(evt, compute);
-      });
-      compute();
-    })();
-  </script>
-  <script>
-    (async () => {
-      try {
-        const res = await fetch('/api/summary', { cache: 'no-cache' });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        const usd = data?.price?.usd_per_zec ?? data?.price_usd;
-        if (Number.isFinite(usd)) {
-          window.latestPriceUsd = usd;
-          if (typeof window.__zipCompute === 'function') window.__zipCompute();
-        }
-      } catch (err) {
-        console.warn('Price fetch failed for ZIP-317 demo', err);
-      }
-    })();
-  </script>
+    <div class="steps">
+      <div class="step">
+        <div class="step-number">1</div>
+        <div class="step-body">
+          <strong>Look back 50 blocks</strong> (skipping the 5 most recent for stability).
+          For every non-coinbase transaction, compute <code>fee / max(2, logical_actions)</code>.
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-number">2</div>
+        <div class="step-body">
+          <strong>Fill unused capacity with synthetic entries.</strong>
+          For each block, the unused bytes (out of 2 MB) are filled with fake transactions
+          priced at the floor: <strong>1,000 zats/action</strong>. This pulls the median
+          toward the floor when the network is quiet.
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-number">3</div>
+        <div class="step-body">
+          <strong>Take the median, bucket to the nearest power of 10.</strong>
+          Ties round down. The result is the <code>standard_fee</code>.
+          The floor (1,000 zats) is enforced as a minimum.
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-number">4</div>
+        <div class="step-body">
+          <strong>Detect congestion.</strong>
+          If zero synthetic entries were added (every block in the window was full),
+          the network is congested. An <code>express_fee</code> of 10x the standard
+          fee becomes available.
+        </div>
+      </div>
+    </div>
+
+    <p class="spec-link">
+      Full specification:
+      <a href="https://zips.z.cash/zip-XXXX#fee-estimator-v0" target="_blank" rel="noopener">
+        ZIP-XXXX: Fee Estimator v0
+      </a>
+    </p>
+  </div>
+</section>
+
+<!-- ======== ROADMAP ======== -->
+<section id="roadmap">
+  <div class="container">
+    <h2>Where this is going</h2>
+
+    <div class="timeline">
+      <div class="phase done">
+        <div class="phase-marker"></div>
+        <div class="phase-body">
+          <h3>Phase 1: <code>z_getstandardfees</code></h3>
+          <span class="phase-date">March &ndash; April 2026</span>
+          <p>
+            RPC endpoint that publishes fee data from confirmed blocks. Implemented in
+            Zebra, relayed by Zaino and lightwalletd. You're looking at the result.
+          </p>
+        </div>
+      </div>
+      <div class="phase current">
+        <div class="phase-marker"></div>
+        <div class="phase-body">
+          <h3>Phase 2: Earthquake Tests</h3>
+          <span class="phase-date">May &ndash; August 2026</span>
+          <p>
+            Stress-test under adversarial conditions. Replay harness, wallet developer
+            outreach, relay and mining policy updates. Must pass experiment gates E2&ndash;E5, E7.
+          </p>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="phase-marker"></div>
+        <div class="phase-body">
+          <h3>Phase 3: Consensus Building</h3>
+          <span class="phase-date">September 2026 &ndash;</span>
+          <p>
+            Feature-flagged PRs in Zebra, Zaino, and lightwalletd. ZIP advancement to
+            "Proposed" status. Wallet integration. Policy convergence gate: &gt;85% for 4 consecutive windows.
+          </p>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="phase-marker"></div>
+        <div class="phase-body">
+          <h3>Phase 4: Extended Research</h3>
+          <span class="phase-date">Ongoing</span>
+          <p>
+            Monitor, iterate, run extended research gates E8&ndash;E12 covering learning
+            robustness, collusion frontier, resource-basis ablation, and controller benchmarks.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="cta">
+      <h3>Building a Zcash wallet?</h3>
+      <p>
+        We want your feedback on the fee UX. The endpoint is live on mainnet today.
+        Try it, break it, tell us what you need.
+      </p>
+      <a href="https://forum.zcashcommunity.com" target="_blank" rel="noopener" class="btn">
+        Join the conversation
+      </a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <p>
+      Built by <a href="https://shieldedlabs.net" target="_blank" rel="noopener">Shielded Labs</a>.
+      Source on <a href="https://github.com/ShieldedLabs/fee-playground" target="_blank" rel="noopener">GitHub</a>.
+    </p>
+  </div>
+</footer>
+
+<script src="app.js"></script>
 </body>
-
 </html>

@@ -173,6 +173,15 @@ message GetAddressUtxosReplyList {
     repeated GetAddressUtxosReply addressUtxos = 1;
 }
 
+// StandardFeesResponse returns the recommended fee per logical action.
+message StandardFeesResponse {
+    uint64 standardFee = 1;            // Recommended fee per logical action in zatoshis
+    uint64 expressFee = 2;             // Priority fee (0 if not congested)
+    string version = 3;                // Estimator version (e.g. "v0")
+    uint64 height = 4;                 // Chain tip height at computation time
+    string howIsThisCalculated = 5;    // URL to specification
+}
+
 service CompactTxStreamer {
     // Return the height of the tip of the best chain
     rpc GetLatestBlock(ChainSpec) returns (BlockID) {}
@@ -229,4 +238,8 @@ service CompactTxStreamer {
     rpc GetLightdInfo(Empty) returns (LightdInfo) {}
     // Testing-only, requires lightwalletd --ping-very-insecure (do not enable in production)
     rpc Ping(Duration) returns (PingResponse) {}
+
+    // Return the recommended standard and express fees based on recent block data.
+    // Proxies to the full node's z_getstandardfees JSON-RPC method.
+    rpc GetStandardFees(Empty) returns (StandardFeesResponse) {}
 }

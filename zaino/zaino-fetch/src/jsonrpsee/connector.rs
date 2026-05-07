@@ -637,6 +637,20 @@ impl JsonRpSeeConnector {
             .await
     }
 
+    /// Send a generic JSON-RPC request and deserialize the response.
+    ///
+    /// Useful for calling RPC methods that don't have a dedicated wrapper.
+    pub async fn json_rpc<R>(
+        &self,
+        method: &str,
+    ) -> Result<R, RpcRequestError<R::RpcError>>
+    where
+        R: std::fmt::Debug + for<'de> Deserialize<'de> + ResponseToError,
+        R::RpcError: Send + Sync + 'static,
+    {
+        self.send_request::<(), R>(method, ()).await
+    }
+
     /// Return information about the given Zcash address.
     ///
     /// # Parameters

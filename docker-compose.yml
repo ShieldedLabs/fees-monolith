@@ -1,14 +1,20 @@
-# Dynamic Fees — Zaino with z_getstandardfees
+# Dynamic Fees — Zaino + lightwalletd with z_getstandardfees
 #
-# Shares the existing zcash mainnet network so it can reach zebrad.
-# Build from local source (includes fee estimator changes).
+# Both indexers proxy fee estimation to zebrad's native z_getstandardfees RPC.
+# Assumes zebrad is running on the zcash_default Docker network.
 #
 # Usage:
 #   docker compose build
 #   docker compose up -d
+#
+#   # Zaino JSON-RPC:
 #   curl -X POST http://127.0.0.1:18088 \
 #     -H "Content-Type: application/json" \
 #     -d '{"jsonrpc":"2.0","method":"z_getstandardfees","id":1}'
+#
+#   # lightwalletd gRPC:
+#   grpcurl -plaintext localhost:19067 \
+#     cash.z.wallet.sdk.rpc.CompactTxStreamer/GetStandardFees
 
 services:
   zaino-fees:
@@ -17,7 +23,6 @@ services:
       dockerfile: Dockerfile
       args:
         NO_TLS: "true"
-    depends_on: []
     restart: unless-stopped
     environment:
       - RUST_LOG=info
@@ -34,9 +39,28 @@ services:
       - "18137:8137"  # gRPC
       - "18088:8088"  # JSON-RPC (z_getstandardfees)
 
+  lightwalletd-fees:
+    build:
+      context: ./lightwalletd
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command:
+      - --zcash-conf-path=/etc/lightwalletd/zcash.conf
+      - --grpc-bind-addr=0.0.0.0:9067
+      - --data-dir=/var/lib/lightwalletd/db
+      - --log-file=/dev/stdout
+      - --log-level=7
+      - --no-tls-very-insecure
+    volumes:
+      - ./config/zcash.conf:/etc/lightwalletd/zcash.conf:ro
+      - lwd-fees-cache:/var/lib/lightwalletd/db
+    ports:
+      - "19067:9067"  # gRPC (GetStandardFees)
+
 networks:
   default:
     external: true
     name: zcash_default
 
-volumes: {}
+volumes:
+  lwd-fees-cache:

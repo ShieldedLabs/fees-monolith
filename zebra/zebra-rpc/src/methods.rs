@@ -2708,13 +2708,21 @@ where
     }
 
     async fn z_getstandardfees(&self) -> Result<ZGetStandardFeesResponse> {
+        use zebra_chain::serialization::ZcashSerialize;
+
         const REORG_BUFFER: u32 = 5;
         const LOOKBACK_WINDOW: u32 = 50;
-        const PRIORITY_MULTIPLIER: u64 = 10;
+        const EXPRESS_MULTIPLIER: u64 = 10;
+        const FLOOR_FEE: u64 = 1000;
+        const BLOCK_CAPACITY: u64 = 2_000_000;
+        const GRACE_ACTIONS: u64 = 2;
+        const ZIP_317_CONVENTIONAL_FEE: u64 = 5000;
         const NOT_ENOUGH_BLOCKS: &str = "not enough blocks to calculate median fee";
         const BLOCK_NOT_FOUND: &str = "block not found while calculating median fee";
+        const SPEC_URL: &str = "https://zips.z.cash/zip-XXXX#fee-estimator-v0";
 
         let tip_height = best_chain_tip_height(&self.latest_chain_tip)?;
+        let tip_u64 = tip_height.0 as u64;
 
         let end_height = tip_height
             .0
@@ -2728,30 +2736,44 @@ where
         let mut read_state = self.read_state.clone();
         let mut tx_cache: HashMap<transaction::Hash, (Arc<Transaction>, block::Height)> =
             HashMap::new();
-        let mut per_action_fees: Vec<u64> = Vec::new();
+
+        // Per-block: (per_action_fees for real txs, block_size, tx_sizes for avg computation)
+        struct BlockFees {
+            per_action_fees: Vec<u64>,
+            block_size: u64,
+            tx_sizes: Vec<u64>,
+        }
+
+        let mut block_fees: Vec<BlockFees> = Vec::new();
 
         for height in start_height..=end_height {
-            let request = ReadRequest::Block(HashOrHeight::Height(block::Height(height)));
+            let request =
+                ReadRequest::BlockAndSize(HashOrHeight::Height(block::Height(height)));
             let response = read_state
                 .ready()
                 .and_then(|service| service.call(request))
                 .await
                 .map_error(server::error::LegacyCode::default())?;
 
-            let block = match response {
-                ReadResponse::Block(Some(block)) => block,
-                ReadResponse::Block(None) => {
+            let (block, block_size) = match response {
+                ReadResponse::BlockAndSize(Some((block, size))) => (block, size as u64),
+                ReadResponse::BlockAndSize(None) => {
                     return Err(ErrorObject::borrowed(
                         server::error::LegacyCode::Misc.into(),
                         BLOCK_NOT_FOUND,
                         None,
                     ))
                 }
-                _ => unreachable!("unmatched response to a block request"),
+                _ => unreachable!("unmatched response to a block_and_size request"),
             };
 
             let mut block_outputs: HashMap<transparent::OutPoint, transparent::Output> =
                 HashMap::new();
+            let mut fees = BlockFees {
+                per_action_fees: Vec::new(),
+                block_size,
+                tx_sizes: Vec::new(),
+            };
 
             for transaction in &block.transactions {
                 if !transaction.is_coinbase() {
@@ -2765,7 +2787,15 @@ where
 
                     if let Some(fee) = fee {
                         let actions = transaction::zip317::conventional_actions(transaction) as u64;
-                        per_action_fees.push(fee.zatoshis() as u64 / actions);
+                        let effective_actions = GRACE_ACTIONS.max(actions);
+                        let fee_per_action = fee.zatoshis() as u64 / effective_actions;
+                        fees.per_action_fees.push(fee_per_action);
+
+                        let tx_size = transaction
+                            .zcash_serialize_to_vec()
+                            .map(|v| v.len() as u64)
+                            .unwrap_or(0);
+                        fees.tx_sizes.push(tx_size);
                     }
                 }
 
@@ -2775,22 +2805,81 @@ where
                     block_outputs.insert(outpoint, output.clone());
                 }
             }
+
+            block_fees.push(fees);
         }
 
-        let median_zats = if per_action_fees.is_empty() {
-            0
-        } else {
-            per_action_fees.sort_unstable();
-            let index = (per_action_fees.len() - 1) / 2;
-            per_action_fees[index]
-        };
-        let standard_zats = bucket_fee_power_of_10(median_zats);
-        let priority_zats = standard_zats.saturating_mul(PRIORITY_MULTIPLIER);
+        // Collect all tx sizes and fees across the window
+        let total_tx_count: usize = block_fees.iter().map(|b| b.tx_sizes.len()).sum();
 
-        Ok(ZGetStandardFeesResponse {
-            standard_fee: standard_zats,
-            priority_fee: priority_zats,
-        })
+        if total_tx_count == 0 {
+            return Ok(ZGetStandardFeesResponse::new(
+                ZIP_317_CONVENTIONAL_FEE,
+                None,
+                "v0".to_string(),
+                tip_u64,
+                SPEC_URL.to_string(),
+            ));
+        }
+
+        let total_tx_bytes: u64 = block_fees
+            .iter()
+            .flat_map(|b| b.tx_sizes.iter())
+            .sum();
+        let avg_tx_size = (total_tx_bytes / total_tx_count as u64).max(1);
+
+        // Build fee multiset: real fees + synthetic fills
+        let mut fee_multiset: Vec<u64> = Vec::new();
+        let mut total_synthetic_count: u64 = 0;
+
+        for bf in &block_fees {
+            fee_multiset.extend_from_slice(&bf.per_action_fees);
+
+            let unused_bytes = BLOCK_CAPACITY.saturating_sub(bf.block_size);
+            let synthetic_count = unused_bytes / avg_tx_size;
+            total_synthetic_count += synthetic_count;
+
+            for _ in 0..synthetic_count {
+                fee_multiset.push(FLOOR_FEE);
+            }
+        }
+
+        if fee_multiset.is_empty() {
+            return Ok(ZGetStandardFeesResponse::new(
+                ZIP_317_CONVENTIONAL_FEE,
+                None,
+                "v0".to_string(),
+                tip_u64,
+                SPEC_URL.to_string(),
+            ));
+        }
+
+        // Sort and compute median
+        fee_multiset.sort_unstable();
+        let len = fee_multiset.len();
+        let raw_median = if len % 2 == 1 {
+            fee_multiset[len / 2]
+        } else {
+            (fee_multiset[len / 2 - 1] + fee_multiset[len / 2]) / 2
+        };
+
+        let bucketed = bucket_fee_power_of_10(raw_median);
+        let standard_fee = FLOOR_FEE.max(bucketed);
+
+        // Congestion detection: express fee only when all blocks are full
+        let express_fee = if total_synthetic_count == 0 {
+            Some(standard_fee.saturating_mul(EXPRESS_MULTIPLIER))
+        } else {
+            None
+        };
+
+        Ok(ZGetStandardFeesResponse::new(
+            standard_fee,
+            express_fee,
+            "v0".to_string(),
+            tip_u64,
+            SPEC_URL.to_string(),
+        ))
     }
 
     async fn z_validate_address(&self, raw_address: String) -> Result<ZValidateAddressResponse> {
@@ -3073,7 +3162,7 @@ where
         .ok_or_misc_error("No blocks in state")
 }
 
-fn bucket_fee_power_of_10(value: u64) -> u64 {
+pub(crate) fn bucket_fee_power_of_10(value: u64) -> u64 {
     if value == 0 {
         return 0;
     }
@@ -3087,10 +3176,10 @@ fn bucket_fee_power_of_10(value: u64) -> u64 {
     let lower_distance = value.saturating_sub(lower);
     let upper_distance = upper.saturating_sub(value);
 
-    if upper_distance <= lower_distance {
-        upper
-    } else {
+    if lower_distance <= upper_distance {
         lower
+    } else {
+        upper
     }
 }
 

@@ -698,52 +698,12 @@ impl ZcashIndexer for FetchServiceSubscriber {
     async fn z_get_standard_fees(
         &self,
     ) -> Result<crate::fee_estimator::StandardFeesResponse, Self::Error> {
-        use crate::fee_estimator::{
-            tx_fee_data_from_transaction, BlockFeeData, FeeEstimatorV0,
-        };
-        use zaino_fetch::jsonrpsee::response::GetBlockResponse;
-        use zaino_fetch::jsonrpsee::response::GetTransactionResponse;
-
-        let estimator = FeeEstimatorV0::default();
-
-        // Get tip height directly from Zebra (bypasses chain index)
-        let tip: Height = self.fetcher.get_block_count().await?.into();
-        let tip_height = tip.0 as u64;
-
-        let required_depth = estimator.required_depth();
-        if tip_height < required_depth {
-            return Ok(estimator.compute(&[], tip_height));
-        }
-
-        let window_end = tip_height - estimator.tip_buffer;
-        let window_start = window_end - estimator.lookback_window + 1;
-
-        let mut blocks = Vec::with_capacity(estimator.lookback_window as usize);
-        for h in window_start..=window_end {
-            let block_resp = self.fetcher.get_block(h.to_string(), Some(1)).await?;
-            if let GetBlockResponse::Object(block_obj) = block_resp {
-                let block_size = block_obj.size.unwrap_or(0).max(0) as u64;
-                let tx_ids = &block_obj.tx;
-
-                let mut transactions = Vec::new();
-                for txid in tx_ids.iter().skip(1) {
-                    let tx_resp = self
-                        .fetcher
-                        .get_raw_transaction(txid.clone(), Some(1))
-                        .await?;
-                    if let GetTransactionResponse::Object(txo) = tx_resp {
-                        transactions.push(tx_fee_data_from_transaction(&txo));
-                    }
-                }
-
-                blocks.push(BlockFeeData {
-                    size_bytes: block_size,
-                    transactions,
-                });
-            }
-        }
-
-        Ok(estimator.compute(&blocks, tip_height))
+        // Proxy to zebrad's native z_getstandardfees RPC.
+        // The fee estimation algorithm now lives in the full node.
+        Ok(self
+            .fetcher
+            .json_rpc::<crate::fee_estimator::StandardFeesResponse>("z_getstandardfees")
+            .await?)
     }
 }
 

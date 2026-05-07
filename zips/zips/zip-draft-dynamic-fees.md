@@ -1,14 +1,12 @@
-```
-ZIP: Unassigned
-Title: Dynamic Fee Estimation via z_getstandardfees
-Owners: Mark Henderson <mark@shieldedlabs.net>
-Status: Draft
-Category: Standards / RPC
-Created: 2026-03-16
-License: MIT
-Discussions-To: <https://forum.zcashcommunity.com/c/technology/dynamic-fees/100>
-Pull-Request: <TBD>
-```
+    ZIP: Unassigned
+    Title: Dynamic Fee Estimation via z_getstandardfees
+    Owners: Mark Henderson <mark@shieldedlabs.net>
+    Status: Draft
+    Category: Standards / RPC
+    Created: 2026-03-16
+    License: MIT
+    Discussions-To: <https://forum.zcashcommunity.com/c/technology/dynamic-fees/100>
+    Pull-Request: <TBD>
 
 
 # Terminology
@@ -28,7 +26,7 @@ The term "zatoshi" is defined as in the Zcash protocol specification.
 
 This ZIP specifies `z_getstandardfees`, an RPC endpoint served by indexers
 (e.g. Zaino, lightwalletd) that publishes a dynamic fee recommendation derived
-from confirmed blocks. The computation runs entirely at the indexer layer — no
+from confirmed blocks. The computation runs entirely at the indexer layer -- no
 changes to full node software (e.g. Zebra) are required. The recommendation is
 observational: it reflects what the network has recently accepted, not what it
 will accept in the future. No service-level guarantees are made or implied.
@@ -54,18 +52,45 @@ from confirmed block data and expose to connected wallets as a policy
 recommendation. No full node changes are required.
 
 
+# Privacy Implications
+
+**Fee entropy.** Powers-of-10 bucketing limits the set of possible fee values,
+reducing the information content of a transaction's fee. This is a strict
+improvement over the status quo where wallets may independently compute varying
+fee amounts.
+
+**Timing signals.** The lookback window is long enough (~1 hour) and the
+bucketing coarse enough that fee changes are infrequent. This limits the
+ability of an observer to correlate transactions with specific fee-change
+events.
+
+**No mempool dependency.** The estimator uses only confirmed block data. It
+does not reveal or depend on mempool contents.
+
+
 # Requirements
 
 The fee recommendation:
 
-- MUST be computable from public, confirmed block data only.
-- MUST NOT require access to mempool state or any non-public information.
-- MUST NOT leak information that could be used to segment or fingerprint users
+- Is computable from public, confirmed block data only.
+- Does not require access to mempool state or any non-public information.
+- Does not leak information that could be used to segment or fingerprint users
   beyond what is already public.
-- SHOULD produce stable outputs — fee changes should be infrequent under normal
+- Produces stable outputs -- fee changes are infrequent under normal
   conditions.
-- SHOULD be computationally inexpensive and not degrade indexer performance.
-- MUST be versioned so that estimator changes are explicit and detectable.
+- Is computationally inexpensive and does not degrade indexer performance.
+- Is versioned so that estimator changes are explicit and detectable.
+
+
+# Non-requirements
+
+This endpoint is observational. Specifically:
+
+1. A returned `standard_fee` is not a guarantee of inclusion in any block.
+2. The endpoint does not constitute a service-level agreement between the
+   indexer and the wallet.
+3. The fee recommendation reflects recent confirmed history. It does not
+   predict future miner behavior.
 
 
 # Specification
@@ -117,26 +142,21 @@ The following fields are reserved for future estimator versions.
 Implementations MUST NOT include them until a future ZIP or estimator revision
 defines their semantics.
 
-- `tiers` — structured fee tier data
-- `floor_fee` — the minimum enforceable fee floor
-- `window` — lookback window metadata (block heights, buffer size)
-- `dispersion` — fee volatility / "fee weather" indicator
-- `health` — diagnostic flags (under-sampled, high variance, suspected
+- `tiers` -- structured fee tier data
+- `floor_fee` -- the minimum enforceable fee floor
+- `window` -- lookback window metadata (block heights, buffer size)
+- `dispersion` -- fee volatility / "fee weather" indicator
+- `health` -- diagnostic flags (under-sampled, high variance, suspected
   manipulation)
 
-### Non-Claims
+### Wallet Integration
 
-This endpoint is observational. Specifically:
+Wallets SHOULD present the fee recommendation to users as an estimate, not a
+promise. Suggested UX language: "estimated fee" or "recommended fee", never
+"required fee" or "guaranteed fee".
 
-1. A returned `standard_fee` is not a guarantee of inclusion in any block.
-2. The endpoint does not constitute a service-level agreement between the
-   indexer and the wallet.
-3. The fee recommendation reflects recent confirmed history. It does not
-   predict future miner behavior.
-4. Wallets SHOULD present the fee recommendation to users as an estimate, not
-   a promise. Suggested UX language: "estimated fee" or "recommended fee",
-   never "required fee" or "guaranteed fee".
-
+Wallets MUST NOT treat the returned fee as mandatory -- users MUST retain the
+ability to override.
 
 ## Fee Estimator v0
 
@@ -152,7 +172,7 @@ published test vectors (see [Test Vectors](#test-vectors)).
 |----------------------|-------|----------------------------------------------------------------|
 | B                    | 50    | Lookback window size in blocks                                 |
 | b                    | 5     | Chain-tip buffer in blocks                                     |
-| floor                | 100   | Synthetic transaction fee per action, in zatoshis              |
+| floor                | 1,000 | Synthetic transaction fee per action, in zatoshis              |
 | block_capacity       | 2 MB  | Maximum block size for synthetic fill computation              |
 | express_multiplier   | 10    | Multiplier applied to `standard_fee` for the express tier      |
 
@@ -162,7 +182,7 @@ published test vectors (see [Test Vectors](#test-vectors)).
 Let *h* be the current chain tip height. The lookback window *L* is defined as
 the *B* consecutive blocks ending *b* blocks before the tip:
 
-> *L* = { B<sub>h−B−b+1</sub>, …, B<sub>h−b</sub> }
+> *L* = { B<sub>h-B-b+1</sub>, ..., B<sub>h-b</sub> }
 
 The buffer *b* guards against chain-tip volatility due to reorgs.
 
@@ -172,7 +192,7 @@ The buffer *b* guards against chain-tip volatility due to reorgs.
 For each block in *L*, collect all non-coinbase transactions. For each
 transaction *tx*, compute:
 
-- `logical_actions(tx)` — as defined in ZIP 317. [^zip-0317]
+- `logical_actions(tx)` -- as defined in ZIP 317. [^zip-0317]
 - `fee_per_action(tx)` = floor( *tx.fee* / max( *grace_actions*,
   *logical_actions(tx)* ) )
 
@@ -187,7 +207,7 @@ with synthetic transactions:
 
 1. For each block in *L*, compute `avg_tx_size` as the mean transaction size
    in bytes across all non-coinbase transactions in *L*.
-2. For each block, compute `unused_bytes` = `block_capacity` − `block_size`.
+2. For each block, compute `unused_bytes` = `block_capacity` - `block_size`.
 3. `synthetic_count` = floor( `unused_bytes` / `avg_tx_size` ) for each block.
 4. Add `synthetic_count` entries of `floor` to the fee multiset *F* for each
    block.
@@ -211,14 +231,10 @@ Round the raw median to the nearest power of 10:
 - Let *log* = log<sub>10</sub>(*raw*).
 - Let *low* = 10<sup>floor(*log*)</sup>.
 - Let *high* = 10<sup>ceil(*log*)</sup>.
-- If *raw* − *low* ≤ *high* − *raw*, then *bucketed* = *low*; else
+- If *raw* - *low* &le; *high* - *raw*, then *bucketed* = *low*; else
   *bucketed* = *high*.
 
 The `standard_fee` is max(*floor*, *bucketed*).
-
-Bucketing reduces fee entropy and information leakage (privacy goal), makes fee
-changes infrequent (UX goal), and ensures fees are divisible by 5 for
-compatibility with ZIP 235's NSM contribution rules. [^zip-0235]
 
 
 ### Congestion Detection and Express Fee
@@ -228,11 +244,11 @@ lookback window, the median is driven entirely by organic demand and the
 network is considered congested.
 
 Formally, congestion is detected when the total synthetic count across all
-blocks in *L* is zero — i.e. every block in the window is full.
+blocks in *L* is zero -- i.e. every block in the window is full.
 
 When congested:
 
-> `express_fee` = `standard_fee` × `express_multiplier`
+> `express_fee` = `standard_fee` x `express_multiplier`
 
 When not congested, `express_fee` is null / omitted.
 
@@ -298,34 +314,90 @@ implementations of the algorithm.
 Test vector sets will be published alongside this ZIP at \<TBD\>.
 
 
-# Security and Privacy Considerations
+# Rationale
 
-## Privacy
+## Why powers-of-10 bucketing
 
-- **Fee entropy.** Powers-of-10 bucketing limits the set of possible fee
-  values, reducing the information content of a transaction's fee. This is a
-  strict improvement over the status quo where wallets may independently
-  compute varying fee amounts.
-- **Timing signals.** The lookback window is long enough (≈1 hour) and the
-  bucketing coarse enough that fee changes are infrequent. This limits the
-  ability of an observer to correlate transactions with specific fee-change
-  events.
-- **No mempool dependency.** The estimator uses only confirmed block data. It
-  does not reveal or depend on mempool contents.
+Bucketing reduces fee entropy and information leakage (privacy goal), makes fee
+changes infrequent (UX goal), and ensures fees are divisible by 5 for
+compatibility with ZIP 235's NSM contribution rules. [^zip-0235] Continuous fee
+values would allow observers to distinguish transactions by their exact fee,
+potentially fingerprinting wallet implementations or revealing urgency.
+
+## Why synthetic fill
+
+Without synthetic fill, the estimator would produce no signal during low-traffic
+periods -- the median of an empty set is undefined, and the median of a sparse
+set is noisy. Synthetic transactions at the `floor` fee model the network's
+unused capacity and anchor the fee recommendation to a predictable baseline.
+The estimator only rises above the floor when organic demand displaces the
+synthetics.
+
+## Why the median
+
+The median is robust to outliers. An attacker cannot meaningfully shift the fee
+recommendation without controlling >50% of per-action fee observations in the
+lookback window. Mean-based estimators are vulnerable to manipulation by a
+small number of high-fee transactions.
+
+## Why a 50-block lookback window
+
+At Zcash's 75-second block interval, 50 blocks represents approximately 1 hour
+of network activity. This is long enough to smooth out short-term variance, but
+short enough to respond to sustained demand changes within a reasonable horizon.
+
+## Why a 5-block chain-tip buffer
+
+Reorgs at the chain tip are common (1-2 blocks). The buffer ensures the
+estimator is not recomputed on data that may be rolled back. A 5-block buffer
+(~6 minutes) provides margin against typical reorg depths without introducing
+excessive latency.
+
+## Interaction with node relay policy
+
+The fee estimator observes confirmed blocks, which reflect the intersection of
+mempool policy and miner behavior. Zebra currently enforces
+`BLOCK_UNPAID_ACTION_LIMIT = 0` in its mempool acceptance logic, meaning every
+transaction in the mempool has paid at least its full conventional fee as
+defined by ZIP 317. [^zip-0317] This is stricter than the spec value of 50,
+which would permit a limited number of underpaying transactions per block.
+
+Under Zebra's current policy, the fee distribution observed by the estimator is
+homogeneous: nearly all transactions pay exactly the conventional fee. The
+estimator correctly reflects this -- producing a `standard_fee` at the floor
+(100 zatoshis, bucketed to the conventional fee level) during uncongested
+periods.
+
+If a future change aligns Zebra's relay policy with the spec value of 50, the
+fee distribution would include some underpaying transactions, which would lower
+the observed median. The estimator's synthetic fill mechanism compensates for
+this: synthetic transactions at the `floor` fee already model the low end of
+the distribution. The median would still be anchored by the majority of
+full-paying transactions.
+
+The estimator's behavior is correct under both the current Zebra policy and the
+spec value. However, implementors should be aware that fee distribution
+characteristics may change if relay policy changes, and test vectors should
+cover both scenarios.
+
+
+# Security Considerations
 
 ## Denial of Service
 
-- **Spam resistance.** Synthetic fill ensures that the fee floor holds during
-  low-traffic periods. An attacker must sustain enough transaction volume to
-  displace synthetics across the full lookback window before the fee rises
-  organically.
-- **Manipulation resistance.** The median is robust to outliers. An attacker
-  cannot meaningfully shift the fee recommendation without controlling >50% of
-  per-action fee observations in the lookback window.
-- **ZIP 317 compatibility.** The action-based accounting from ZIP 317
-  [^zip-0317] remains in effect. An attacker cannot generate large-in-kb
-  transactions cheaply to skew the average transaction size used for synthetic
-  fill.
+**Spam resistance.** Synthetic fill ensures that the fee floor holds during
+low-traffic periods. An attacker must sustain enough transaction volume to
+displace synthetics across the full lookback window before the fee rises
+organically.
+
+**Manipulation resistance.** The median is robust to outliers. An attacker
+cannot meaningfully shift the fee recommendation without controlling >50% of
+per-action fee observations in the lookback window.
+
+**ZIP 317 compatibility.** The action-based accounting from ZIP 317
+[^zip-0317] remains in effect. An attacker cannot generate large-in-kb
+transactions cheaply to skew the average transaction size used for synthetic
+fill.
 
 ## Miner Incentives
 
@@ -339,27 +411,42 @@ from predictable fee behavior and reduced orphan risk from oversized mempools.
 
 ## Phase 1: Indexer (Policy-only)
 
-Indexers implementing `z_getstandardfees` SHOULD deploy the endpoint as an
+Indexers implementing `z_getstandardfees` should deploy the endpoint as an
 informational RPC call. No full node changes, consensus changes, or relay
 policy changes are required.
 
 The reference implementation targets Zaino. Other indexers (e.g. lightwalletd)
-MAY implement the same algorithm using the published test vectors for
+may implement the same algorithm using the published test vectors for
 conformance.
 
 ## Phase 2: Wallet Adoption
 
-Wallets SHOULD begin using `z_getstandardfees` to inform fee selection UX.
-Wallets MUST NOT treat the returned fee as mandatory — users should retain the
-ability to override.
+Wallets should begin using `z_getstandardfees` to inform fee selection UX.
 
 ## Future: Full Node and Consensus
 
 If a future ZIP proposes relay policy changes or consensus-level fee rules
 (e.g. mandatory bucketing, fee floors, or expiry height constraints), those
-rules will be specified in a separate ZIP. Such a ZIP MAY move the fee
-estimator into the full node, or MAY continue to rely on the indexer
+rules will be specified in a separate ZIP. Such a ZIP may move the fee
+estimator into the full node, or may continue to rely on the indexer
 computation defined here.
+
+
+# Open issues
+
+- The `Discussions-To` field should reference a GitHub issue URL in addition to
+  or instead of the forum category.
+- Test vector sets are TBD. At minimum, vectors should cover: an empty window,
+  an all-synthetic window, a congestion threshold boundary, a bucketing
+  boundary, and a window with mixed fee levels.
+- The `how_is_this_calculated` URI contains a placeholder (`zip-XXXX`) pending
+  ZIP number assignment.
+- Reference implementation status and links (Zaino, Zebra) should be added
+  when available.
+- Whether the estimator should account for the
+  `BLOCK_UNPAID_ACTION_LIMIT` divergence between Zebra (0) and the ZIP 317
+  spec (50), or whether this is purely a relay policy concern outside the
+  estimator's scope.
 
 
 # References
@@ -368,9 +455,11 @@ computation defined here.
 
 [^protocol]: [Zcash Protocol Specification, Version 2025.6.3 [NU6.1] or later](protocol/protocol.pdf)
 
-[^zip-0235]: [ZIP 235: Remove 60% of Transaction Fees From Circulation](zip-0235.md)
+[^zip-0235]: [ZIP 235: Remove 60% of Transaction Fees From Circulation](zip-0235)
 
-[^zip-0317]: [ZIP 317: Proportional Transfer Fee Mechanism](zip-0317.rst)
+[^zip-0317]: [ZIP 317: Proportional Transfer Fee Mechanism](zip-0317)
+
+[^zip-0401]: [ZIP 401: Addressing Mempool Denial-of-Service](zip-0401)
 
 [^wallet-threat-model]: [Zcash Wallet App Threat Model](https://zcash.readthedocs.io/en/latest/rtd_pages/wallet_threat_model.html)
 

@@ -11,6 +11,7 @@ use zebra_chain::{
     chain_sync_status::MockSyncStatus,
     chain_tip::mock::MockChainTip,
     parameters::Network::Mainnet,
+    serialization::ZcashSerialize,
     transaction::{LockTime, Transaction},
     transparent,
 };
@@ -19,8 +20,60 @@ use zebra_node_services::BoxError;
 use zebra_state::{HashOrHeight, ReadRequest, ReadResponse};
 use zebra_test::mock_service::MockService;
 
-use super::super::{calculate_transaction_fee, RpcImpl, RpcServer};
+use super::super::{bucket_fee_power_of_10, calculate_transaction_fee, RpcImpl, RpcServer};
 use crate::server::error::LegacyCode;
+
+/// Helper: create a block with a coinbase tx and a spend tx, returning it with its serialized size.
+fn make_block_with_size(
+    height: u32,
+    base_value: i64,
+    fee_zats: i64,
+    header: &Arc<Header>,
+) -> (Arc<Block>, usize) {
+    let coinbase_value = base_value + fee_zats;
+    let coinbase_tx = make_coinbase_tx(height, coinbase_value);
+    let spend_tx = make_spend_tx(coinbase_tx.as_ref(), base_value);
+
+    let block = Arc::new(Block {
+        header: header.clone(),
+        transactions: vec![coinbase_tx, spend_tx],
+    });
+    let size = block.zcash_serialize_to_vec().map(|v| v.len()).unwrap_or(0);
+    (block, size)
+}
+
+fn make_coinbase_tx(height: u32, value_zats: i64) -> Arc<Transaction> {
+    let input = transparent::Input::new_coinbase(Height(height), vec![], None);
+    let output = transparent::Output::new_coinbase(
+        Amount::<NonNegative>::new(value_zats),
+        transparent::Script::new(&[]),
+    );
+
+    Arc::new(Transaction::V1 {
+        inputs: vec![input],
+        outputs: vec![output],
+        lock_time: LockTime::unlocked(),
+    })
+}
+
+fn make_spend_tx(prev_tx: &Transaction, output_value_zats: i64) -> Arc<Transaction> {
+    let outpoint = transparent::OutPoint::from_usize(prev_tx.hash(), 0);
+    let input = transparent::Input::PrevOut {
+        outpoint,
+        unlock_script: transparent::Script::new(&[]),
+        sequence: 0,
+    };
+    let output = transparent::Output {
+        value: Amount::<NonNegative>::new(output_value_zats),
+        lock_script: transparent::Script::new(&[]),
+    };
+
+    Arc::new(Transaction::V1 {
+        inputs: vec![input],
+        outputs: vec![output],
+        lock_time: LockTime::unlocked(),
+    })
+}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn z_getstandardfees_happy_path() {
@@ -58,27 +111,31 @@ async fn z_getstandardfees_happy_path() {
 
     for height in 1u32..=50u32 {
         let fee_zats = i64::from(height) * 2;
-        let block = make_block(height, base_value, fee_zats, &header);
+        let (block, block_size) = make_block_with_size(height, base_value, fee_zats, &header);
 
-        let request = ReadRequest::Block(HashOrHeight::Height(Height(height)));
+        let request = ReadRequest::BlockAndSize(HashOrHeight::Height(Height(height)));
         read_state
             .expect_request(request)
             .await
-            .respond(ReadResponse::Block(Some(block)));
+            .respond(ReadResponse::BlockAndSize(Some((block, block_size))));
     }
 
     let response = rpc_future
         .await
         .expect("rpc task should not panic")
         .expect("rpc should succeed");
-    assert_eq!(response.standard_fee, 10);
-    assert_eq!(response.priority_fee, 100);
+
+    // With tiny blocks and 2MB capacity, synthetic fill dominates → median at floor (1000)
+    assert_eq!(response.standard_fee, 1000);
+    // Not congested (huge synthetic fill) → no express fee
+    assert!(response.express_fee.is_none());
+    assert_eq!(response.version, "v0");
+    assert_eq!(response.height, 55);
 
     mempool.expect_no_requests().await;
     state.expect_no_requests().await;
     read_state.expect_no_requests().await;
 
-    // The queue task should continue without errors or panics.
     assert!(rpc_tx_queue.now_or_never().is_none());
 }
 
@@ -244,11 +301,11 @@ async fn z_getstandardfees_block_not_found() {
 
     let rpc_future = tokio::spawn(async move { rpc.z_getstandardfees().await });
 
-    let request = ReadRequest::Block(HashOrHeight::Height(Height(1)));
+    let request = ReadRequest::BlockAndSize(HashOrHeight::Height(Height(1)));
     read_state
         .expect_request(request)
         .await
-        .respond(ReadResponse::Block(None));
+        .respond(ReadResponse::BlockAndSize(None));
 
     let error = rpc_future
         .await
@@ -266,50 +323,6 @@ async fn z_getstandardfees_block_not_found() {
     read_state.expect_no_requests().await;
 
     assert!(rpc_tx_queue.now_or_never().is_none());
-}
-
-fn make_block(height: u32, base_value: i64, fee_zats: i64, header: &Arc<Header>) -> Arc<Block> {
-    let coinbase_value = base_value + fee_zats;
-    let coinbase_tx = make_coinbase_tx(height, coinbase_value);
-    let spend_tx = make_spend_tx(coinbase_tx.as_ref(), base_value);
-
-    Arc::new(Block {
-        header: header.clone(),
-        transactions: vec![coinbase_tx, spend_tx],
-    })
-}
-
-fn make_coinbase_tx(height: u32, value_zats: i64) -> Arc<Transaction> {
-    let input = transparent::Input::new_coinbase(Height(height), vec![], None);
-    let output = transparent::Output::new_coinbase(
-        Amount::<NonNegative>::new(value_zats),
-        transparent::Script::new(&[]),
-    );
-
-    Arc::new(Transaction::V1 {
-        inputs: vec![input],
-        outputs: vec![output],
-        lock_time: LockTime::unlocked(),
-    })
-}
-
-fn make_spend_tx(prev_tx: &Transaction, output_value_zats: i64) -> Arc<Transaction> {
-    let outpoint = transparent::OutPoint::from_usize(prev_tx.hash(), 0);
-    let input = transparent::Input::PrevOut {
-        outpoint,
-        unlock_script: transparent::Script::new(&[]),
-        sequence: 0,
-    };
-    let output = transparent::Output {
-        value: Amount::<NonNegative>::new(output_value_zats),
-        lock_script: transparent::Script::new(&[]),
-    };
-
-    Arc::new(Transaction::V1 {
-        inputs: vec![input],
-        outputs: vec![output],
-        lock_time: LockTime::unlocked(),
-    })
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -365,4 +378,26 @@ async fn calculate_transaction_fee_fetches_prev_tx_from_read_state() {
     assert_eq!(fee.zatoshis(), 2);
     assert!(tx_cache.contains_key(&prev_hash));
     read_state.expect_no_requests().await;
+}
+
+#[test]
+fn test_bucket_fee_power_of_10() {
+    assert_eq!(bucket_fee_power_of_10(0), 0);
+    assert_eq!(bucket_fee_power_of_10(1), 1);
+    // 5: distance to 1 = 4, distance to 10 = 5 → tie goes to lower
+    assert_eq!(bucket_fee_power_of_10(5), 1);
+    // 6: distance to 1 = 5, distance to 10 = 4 → upper
+    assert_eq!(bucket_fee_power_of_10(6), 10);
+    assert_eq!(bucket_fee_power_of_10(10), 10);
+    assert_eq!(bucket_fee_power_of_10(50), 10);
+    // 55: distance to 10 = 45, distance to 100 = 45 → tie goes to lower
+    assert_eq!(bucket_fee_power_of_10(55), 10);
+    assert_eq!(bucket_fee_power_of_10(56), 100);
+    assert_eq!(bucket_fee_power_of_10(100), 100);
+    assert_eq!(bucket_fee_power_of_10(550), 100);
+    assert_eq!(bucket_fee_power_of_10(551), 1000);
+    assert_eq!(bucket_fee_power_of_10(1000), 1000);
+    assert_eq!(bucket_fee_power_of_10(5000), 1000);
+    assert_eq!(bucket_fee_power_of_10(5500), 1000);
+    assert_eq!(bucket_fee_power_of_10(5501), 10000);
 }

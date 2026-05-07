@@ -1,10 +1,13 @@
-//! Fee Estimator v0 — implements the dynamic fee estimation algorithm
-//! specified in the `z_getstandardfees` ZIP.
+//! Fee Estimator v0 — types and algorithm for the `z_getstandardfees` RPC.
 //!
-//! The estimator computes a fee recommendation from confirmed block data only.
-//! It is designed to run at the indexer layer with no consensus or full-node changes.
+//! The canonical fee estimation algorithm now lives in zebrad. This module
+//! provides the response type (used by Zaino's proxy endpoint) and the
+//! original algorithm (retained for reference and testing).
+
+use std::convert::Infallible;
 
 use serde::{Deserialize, Serialize};
+use zaino_fetch::jsonrpsee::connector::ResponseToError;
 use zebra_rpc::{
     client::{Input, TransactionObject},
     methods::{GetBlock, GetBlockTransaction},
@@ -30,6 +33,10 @@ pub struct StandardFeesResponse {
     pub height: u64,
     /// URI pointing to the estimator specification.
     pub how_is_this_calculated: String,
+}
+
+impl ResponseToError for StandardFeesResponse {
+    type RpcError = Infallible;
 }
 
 /// Per-block data consumed by the fee estimator.
