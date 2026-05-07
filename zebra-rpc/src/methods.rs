@@ -50,6 +50,7 @@ use jsonrpsee::core::{async_trait, RpcResult as Result};
 use jsonrpsee_proc_macros::rpc;
 use jsonrpsee_types::{ErrorCode, ErrorObject};
 use rand::{rngs::OsRng, RngCore};
+use schemars::JsonSchema;
 use tokio::{
     sync::{broadcast, mpsc, watch},
     task::JoinHandle,
@@ -58,17 +59,17 @@ use tower::ServiceExt;
 use tracing::Instrument;
 
 use zcash_address::{unified::Encoding, TryFromAddress};
-use zcash_primitives::consensus::Parameters;
+use zcash_protocol::consensus::Parameters;
 
 use zebra_chain::{
-    amount::{self, Amount, NegativeAllowed, NonNegative},
+    amount::{Amount, NegativeAllowed},
     block::{self, Block, Commitment, Height, SerializedBlock, TryIntoHeight},
     chain_sync_status::ChainSyncStatus,
     chain_tip::{ChainTip, NetworkChainTipHeightEstimator},
     parameters::{
         subsidy::{
-            block_subsidy, funding_stream_values, miner_subsidy, FundingStreamReceiver,
-            ParameterSubsidy,
+            block_subsidy, founders_reward, funding_stream_values, miner_subsidy,
+            FundingStreamReceiver,
         },
         ConsensusBranchId, Network, NetworkUpgrade, POW_AVERAGING_WINDOW,
     },
@@ -86,7 +87,7 @@ use zebra_consensus::{
     funding_stream_address, router::service_trait::BlockVerifierService, RouterError,
 };
 use zebra_network::{address_book_peers::AddressBookPeers, types::PeerServices, PeerSocketAddr};
-use zebra_node_services::mempool::{self, MempoolService};
+use zebra_node_services::mempool::{self, CreatedOrSpent, MempoolService};
 use zebra_state::{
     AnyTx, HashOrHeight, OutputLocation, ReadRequest, ReadResponse, ReadState as ReadStateService,
     State as StateService, TransactionLocation,
@@ -95,7 +96,9 @@ use zebra_state::{
 use crate::{
     client::Treestate,
     config,
-    methods::types::{validate_address::validate_address, z_validate_address::z_validate_address},
+    methods::types::{
+        validate_address::validate_address, z_validate_address::z_validate_address, zec::Zec,
+    },
     queue::Queue,
     server::{
         self,
@@ -131,9 +134,42 @@ use types::{
     transaction::TransactionObject,
     unified_address::ZListUnifiedReceiversResponse,
     validate_address::ValidateAddressResponse,
-    z_getstandardfees::ZGetStandardFeesResponse,
     z_validate_address::ZValidateAddressResponse,
 };
+
+include!(concat!(env!("OUT_DIR"), "/rpc_openrpc.rs"));
+
+// TODO: Review the parameter descriptions below, and update them as needed:
+// https://github.com/ZcashFoundation/zebra/issues/10320
+pub(super) const PARAM_VERBOSE_DESC: &str =
+    "Boolean flag to indicate verbosity, true for a json object, false for hex encoded data.";
+pub(super) const PARAM_POOL_DESC: &str =
+    "The pool from which subtrees should be returned. Either \"sapling\" or \"orchard\".";
+pub(super) const PARAM_START_INDEX_DESC: &str =
+    "The index of the first 2^16-leaf subtree to return.";
+pub(super) const PARAM_LIMIT_DESC: &str = "The maximum number of subtrees to return.";
+pub(super) const PARAM_REQUEST_DESC: &str = "The request object containing the parameters.";
+pub(super) const PARAM_INDEX_DESC: &str = "The index of the subtree to return.";
+pub(super) const PARAM_RAW_TRANSACTION_HEX_DESC: &str = "The hex-encoded raw transaction bytes.";
+#[allow(non_upper_case_globals)]
+pub(super) const PARAM__ALLOW_HIGH_FEES_DESC: &str = "Whether to allow high fees.";
+pub(super) const PARAM_NUM_BLOCKS_DESC: &str = "The number of blocks to return.";
+pub(super) const PARAM_HEIGHT_DESC: &str = "The height of the block to return.";
+pub(super) const PARAM_COMMAND_DESC: &str = "The command to execute.";
+#[allow(non_upper_case_globals)]
+pub(super) const PARAM__PARAMETERS_DESC: &str = "The parameters for the command.";
+pub(super) const PARAM_BLOCK_HASH_DESC: &str = "The hash of the block to return.";
+pub(super) const PARAM_ADDRESS_DESC: &str = "The address to return.";
+pub(super) const PARAM_ADDRESS_STRINGS_DESC: &str = "The addresses to return.";
+pub(super) const PARAM_ADDR_DESC: &str = "The address to return.";
+pub(super) const PARAM_HEX_DATA_DESC: &str = "The hex-encoded data to return.";
+pub(super) const PARAM_TXID_DESC: &str = "The transaction ID to return.";
+pub(super) const PARAM_HASH_OR_HEIGHT_DESC: &str = "The block hash or height to return.";
+pub(super) const PARAM_PARAMETERS_DESC: &str = "The parameters for the command.";
+pub(super) const PARAM_VERBOSITY_DESC: &str = "Whether to include verbose output.";
+pub(super) const PARAM_N_DESC: &str = "The output index in the transaction.";
+pub(super) const PARAM_INCLUDE_MEMPOOL_DESC: &str =
+    "Whether to include mempool transactions in the response.";
 
 #[cfg(test)]
 mod tests;
@@ -595,14 +631,6 @@ pub trait Rpc {
     #[method(name = "validateaddress")]
     async fn validate_address(&self, address: String) -> Result<ValidateAddressResponse>;
 
-    /// Returns standard and priority fees based on the median per-action fee,
-    /// bucketed to the nearest power of 10.
-    ///
-    /// method: post
-    /// tags: fees
-    #[method(name = "z_getstandardfees")]
-    async fn z_getstandardfees(&self) -> Result<ZGetStandardFeesResponse>;
-
     /// Checks if a zcash address of type P2PKH, P2SH, TEX, SAPLING or UNIFIED is valid.
     /// Returns information about the given address if valid.
     ///
@@ -714,6 +742,28 @@ pub trait Rpc {
     /// method: post
     /// tags: network
     async fn add_node(&self, addr: PeerSocketAddr, command: AddNodeCommand) -> Result<()>;
+
+    /// Returns an OpenRPC schema as a description of this service.
+    #[method(name = "rpc.discover")]
+    fn openrpc(&self) -> openrpsee::openrpc::Response;
+    /// Returns details about an unspent transaction output.
+    ///
+    /// zcashd reference: [`gettxout`](https://zcash.github.io/rpc/gettxout.html)
+    /// method: post
+    /// tags: transaction
+    ///
+    /// # Parameters
+    ///
+    /// - `txid`: (string, required, example="mytxid") The transaction ID that contains the output.
+    /// - `n`: (number, required) The output index number.
+    /// - `include_mempool` (bool, optional, default=true) Whether to include the mempool in the search.
+    #[method(name = "gettxout")]
+    async fn get_tx_out(
+        &self,
+        txid: String,
+        n: u32,
+        include_mempool: Option<bool>,
+    ) -> Result<GetTxOutResponse>;
 }
 
 /// RPC method implementations.
@@ -1369,6 +1419,7 @@ where
                 solution: Some(solution),
                 bits: Some(bits),
                 difficulty: Some(difficulty),
+                n_tx: tx.len(),
                 tx,
                 trees,
                 chain_supply: block_info
@@ -1688,7 +1739,7 @@ where
             };
         }
 
-        let txid = if let Some(block_hash) = block_hash {
+        let caller_block_context = if let Some(block_hash) = block_hash {
             let block_hash = block::Hash::from_hex(block_hash)
                 .map_error(server::error::LegacyCode::InvalidAddressOrKey)?;
             match self
@@ -1700,24 +1751,25 @@ where
                 .await
                 .map_misc_error()?
             {
-                zebra_state::ReadResponse::AnyChainTransactionIdsForBlock(tx_ids) => *tx_ids
-                    .ok_or_error(
+                zebra_state::ReadResponse::AnyChainTransactionIdsForBlock(tx_ids) => {
+                    let (ids, in_best_chain) = tx_ids.ok_or_error(
                         server::error::LegacyCode::InvalidAddressOrKey,
                         "block not found",
-                    )?
-                    .0
-                    .iter()
-                    .find(|id| **id == txid)
-                    .ok_or_error(
+                    )?;
+
+                    ids.iter().find(|id| **id == txid).ok_or_error(
                         server::error::LegacyCode::InvalidAddressOrKey,
                         "txid not found",
-                    )?,
+                    )?;
+
+                    Some((block_hash, in_best_chain))
+                }
                 _ => {
                     unreachable!("unmatched response to a `AnyChainTransactionIdsForBlock` request")
                 }
             }
         } else {
-            txid
+            None
         };
 
         // If the tx wasn't in the mempool, check the state.
@@ -1729,48 +1781,80 @@ where
             .map_misc_error()?
         {
             zebra_state::ReadResponse::AnyChainTransaction(Some(tx)) => Ok(if verbose {
-                match tx {
-                    AnyTx::Mined(tx) => {
-                        let block_hash = match self
-                            .read_state
-                            .clone()
-                            .oneshot(zebra_state::ReadRequest::BestChainBlockHash(tx.height))
-                            .await
-                            .map_misc_error()?
-                        {
-                            zebra_state::ReadResponse::BlockHash(block_hash) => block_hash,
-                            _ => {
-                                unreachable!("unmatched response to a `BestChainBlockHash` request")
-                            }
-                        };
+                if let Some((caller_block_hash, in_best_chain)) = caller_block_context {
+                    // Use the caller-provided block context to avoid TOCTOU races
+                    // between the validation query and the transaction fetch.
+                    let (raw_tx, height, confirmations, block_time) = match &tx {
+                        AnyTx::Mined(mined) if in_best_chain => (
+                            mined.tx.clone(),
+                            Some(mined.height),
+                            Some(mined.confirmations),
+                            Some(mined.block_time),
+                        ),
+                        _ => {
+                            let raw_tx: Arc<Transaction> = tx.into();
+                            (raw_tx, None, None, None)
+                        }
+                    };
 
-                        GetRawTransactionResponse::Object(Box::new(
-                            TransactionObject::from_transaction(
-                                tx.tx.clone(),
-                                Some(tx.height),
-                                Some(tx.confirmations),
-                                &self.network,
-                                // TODO: Performance gain:
-                                // https://github.com/ZcashFoundation/zebra/pull/9458#discussion_r2059352752
-                                Some(tx.block_time),
-                                block_hash,
-                                Some(true),
-                                txid,
-                            ),
-                        ))
-                    }
-                    AnyTx::Side((tx, block_hash)) => GetRawTransactionResponse::Object(Box::new(
+                    GetRawTransactionResponse::Object(Box::new(
                         TransactionObject::from_transaction(
-                            tx.clone(),
-                            None,
-                            None,
+                            raw_tx,
+                            height,
+                            confirmations,
                             &self.network,
-                            None,
-                            Some(block_hash),
-                            Some(false),
+                            block_time,
+                            Some(caller_block_hash),
+                            Some(in_best_chain),
                             txid,
                         ),
-                    )),
+                    ))
+                } else {
+                    match tx {
+                        AnyTx::Mined(tx) => {
+                            let block_hash = match self
+                                .read_state
+                                .clone()
+                                .oneshot(zebra_state::ReadRequest::BestChainBlockHash(tx.height))
+                                .await
+                                .map_misc_error()?
+                            {
+                                zebra_state::ReadResponse::BlockHash(block_hash) => block_hash,
+                                _ => {
+                                    unreachable!(
+                                        "unmatched response to a `BestChainBlockHash` request"
+                                    )
+                                }
+                            };
+
+                            GetRawTransactionResponse::Object(Box::new(
+                                TransactionObject::from_transaction(
+                                    tx.tx.clone(),
+                                    Some(tx.height),
+                                    Some(tx.confirmations),
+                                    &self.network,
+                                    // TODO: Performance gain:
+                                    // https://github.com/ZcashFoundation/zebra/pull/9458#discussion_r2059352752
+                                    Some(tx.block_time),
+                                    block_hash,
+                                    Some(true),
+                                    txid,
+                                ),
+                            ))
+                        }
+                        AnyTx::Side((tx, block_hash)) => GetRawTransactionResponse::Object(
+                            Box::new(TransactionObject::from_transaction(
+                                tx.clone(),
+                                None,
+                                None,
+                                &self.network,
+                                None,
+                                Some(block_hash),
+                                Some(false),
+                                txid,
+                            )),
+                        ),
+                    }
                 }
             } else {
                 let tx: Arc<Transaction> = tx.into();
@@ -1832,7 +1916,7 @@ where
         let time = u32::try_from(block.header.time.timestamp())
             .expect("Timestamps of valid blocks always fit into u32.");
 
-        let sapling_nu = zcash_primitives::consensus::NetworkUpgrade::Sapling;
+        let sapling_nu = zcash_protocol::consensus::NetworkUpgrade::Sapling;
         let sapling = if network.is_nu_active(sapling_nu, height.into()) {
             match read_state
                 .ready()
@@ -1853,7 +1937,7 @@ where
         let (sapling_tree, sapling_root) =
             sapling.map_or((None, None), |(tree, root)| (Some(tree), Some(root)));
 
-        let orchard_nu = zcash_primitives::consensus::NetworkUpgrade::Nu5;
+        let orchard_nu = zcash_protocol::consensus::NetworkUpgrade::Nu5;
         let orchard = if network.is_nu_active(orchard_nu, height.into()) {
             match read_state
                 .ready()
@@ -2707,92 +2791,6 @@ where
         validate_address(network, raw_address)
     }
 
-    async fn z_getstandardfees(&self) -> Result<ZGetStandardFeesResponse> {
-        const REORG_BUFFER: u32 = 5;
-        const LOOKBACK_WINDOW: u32 = 50;
-        const PRIORITY_MULTIPLIER: u64 = 10;
-        const NOT_ENOUGH_BLOCKS: &str = "not enough blocks to calculate median fee";
-        const BLOCK_NOT_FOUND: &str = "block not found while calculating median fee";
-
-        let tip_height = best_chain_tip_height(&self.latest_chain_tip)?;
-
-        let end_height = tip_height
-            .0
-            .checked_sub(REORG_BUFFER)
-            .ok_or_misc_error(NOT_ENOUGH_BLOCKS)?;
-
-        let start_height = end_height
-            .checked_sub(LOOKBACK_WINDOW - 1)
-            .ok_or_misc_error(NOT_ENOUGH_BLOCKS)?;
-
-        let mut read_state = self.read_state.clone();
-        let mut tx_cache: HashMap<transaction::Hash, (Arc<Transaction>, block::Height)> =
-            HashMap::new();
-        let mut per_action_fees: Vec<u64> = Vec::new();
-
-        for height in start_height..=end_height {
-            let request = ReadRequest::Block(HashOrHeight::Height(block::Height(height)));
-            let response = read_state
-                .ready()
-                .and_then(|service| service.call(request))
-                .await
-                .map_error(server::error::LegacyCode::default())?;
-
-            let block = match response {
-                ReadResponse::Block(Some(block)) => block,
-                ReadResponse::Block(None) => {
-                    return Err(ErrorObject::borrowed(
-                        server::error::LegacyCode::Misc.into(),
-                        BLOCK_NOT_FOUND,
-                        None,
-                    ))
-                }
-                _ => unreachable!("unmatched response to a block request"),
-            };
-
-            let mut block_outputs: HashMap<transparent::OutPoint, transparent::Output> =
-                HashMap::new();
-
-            for transaction in &block.transactions {
-                if !transaction.is_coinbase() {
-                    let fee = calculate_transaction_fee(
-                        &mut read_state,
-                        &mut tx_cache,
-                        transaction,
-                        &block_outputs,
-                    )
-                    .await?;
-
-                    if let Some(fee) = fee {
-                        let actions = transaction::zip317::conventional_actions(transaction) as u64;
-                        per_action_fees.push(fee.zatoshis() as u64 / actions);
-                    }
-                }
-
-                let tx_hash = transaction.hash();
-                for (index, output) in transaction.outputs().iter().enumerate() {
-                    let outpoint = transparent::OutPoint::from_usize(tx_hash, index);
-                    block_outputs.insert(outpoint, output.clone());
-                }
-            }
-        }
-
-        let median_zats = if per_action_fees.is_empty() {
-            0
-        } else {
-            per_action_fees.sort_unstable();
-            let index = (per_action_fees.len() - 1) / 2;
-            per_action_fees[index]
-        };
-        let standard_zats = bucket_fee_power_of_10(median_zats);
-        let priority_zats = standard_zats.saturating_mul(PRIORITY_MULTIPLIER);
-
-        Ok(ZGetStandardFeesResponse {
-            standard_fee: standard_zats,
-            priority_fee: priority_zats,
-        })
-    }
-
     async fn z_validate_address(&self, raw_address: String) -> Result<ZValidateAddressResponse> {
         let network = self.network.clone();
 
@@ -2800,46 +2798,31 @@ where
     }
 
     async fn get_block_subsidy(&self, height: Option<u32>) -> Result<GetBlockSubsidyResponse> {
-        let latest_chain_tip = self.latest_chain_tip.clone();
-        let network = self.network.clone();
+        let net = self.network.clone();
 
-        let height = if let Some(height) = height {
-            Height(height)
-        } else {
-            best_chain_tip_height(&latest_chain_tip)?
+        let height = match height {
+            Some(h) => Height(h),
+            None => best_chain_tip_height(&self.latest_chain_tip)?,
         };
 
-        if height < network.height_for_first_halving() {
-            return Err(ErrorObject::borrowed(
-                0,
-                "Zebra does not support founders' reward subsidies, \
-                        use a block height that is after the first halving",
-                None,
-            ));
-        }
-
-        // Always zero for post-halving blocks
-        let founders = Amount::zero();
-
-        let total_block_subsidy =
-            block_subsidy(height, &network).map_error(server::error::LegacyCode::default())?;
-        let miner_subsidy = miner_subsidy(height, &network, total_block_subsidy)
-            .map_error(server::error::LegacyCode::default())?;
+        let subsidy = block_subsidy(height, &net).map_misc_error()?;
 
         let (lockbox_streams, mut funding_streams): (Vec<_>, Vec<_>) =
-            funding_stream_values(height, &network, total_block_subsidy)
-                .map_error(server::error::LegacyCode::default())?
+            funding_stream_values(height, &net, subsidy)
+                .map_misc_error()?
                 .into_iter()
                 // Separate the funding streams into deferred and non-deferred streams
                 .partition(|(receiver, _)| matches!(receiver, FundingStreamReceiver::Deferred));
 
-        let is_nu6 = NetworkUpgrade::current(&network, height) == NetworkUpgrade::Nu6;
-
-        let [lockbox_total, funding_streams_total]: [std::result::Result<
-            Amount<NonNegative>,
-            amount::Error,
-        >; 2] = [&lockbox_streams, &funding_streams]
-            .map(|streams| streams.iter().map(|&(_, amount)| amount).sum());
+        let [lockbox_total, funding_streams_total] =
+            [&lockbox_streams, &funding_streams].map(|streams| {
+                streams
+                    .iter()
+                    .map(|&(_, amount)| amount)
+                    .sum::<std::result::Result<Amount<_>, _>>()
+                    .map(Zec::from)
+                    .map_misc_error()
+            });
 
         // Use the same funding stream order as zcashd
         funding_streams.sort_by_key(|(receiver, _funding_stream)| {
@@ -2848,13 +2831,15 @@ where
                 .position(|zcashd_receiver| zcashd_receiver == receiver)
         });
 
+        let is_nu6 = NetworkUpgrade::current(&net, height) == NetworkUpgrade::Nu6;
+
         // Format the funding streams and lockbox streams
-        let [funding_streams, lockbox_streams]: [Vec<_>; 2] = [funding_streams, lockbox_streams]
-            .map(|streams| {
+        let [funding_streams, lockbox_streams] =
+            [funding_streams, lockbox_streams].map(|streams| {
                 streams
                     .into_iter()
                     .map(|(receiver, value)| {
-                        let address = funding_stream_address(height, &network, receiver);
+                        let address = funding_stream_address(height, &net, receiver);
                         types::subsidy::FundingStream::new_internal(
                             is_nu6, receiver, value, address,
                         )
@@ -2863,17 +2848,15 @@ where
             });
 
         Ok(GetBlockSubsidyResponse {
-            miner: miner_subsidy.into(),
-            founders: founders.into(),
+            miner: miner_subsidy(height, &net, subsidy)
+                .map_misc_error()?
+                .into(),
+            founders: founders_reward(&net, height).into(),
             funding_streams,
             lockbox_streams,
-            funding_streams_total: funding_streams_total
-                .map_error(server::error::LegacyCode::default())?
-                .into(),
-            lockbox_total: lockbox_total
-                .map_error(server::error::LegacyCode::default())?
-                .into(),
-            total_block_subsidy: total_block_subsidy.into(),
+            funding_streams_total: funding_streams_total?,
+            lockbox_total: lockbox_total?,
+            total_block_subsidy: subsidy.into(),
         })
     }
 
@@ -3018,7 +3001,7 @@ where
                 SubmitBlockResponse::ErrorResponse(response) => {
                     return Err(ErrorObject::owned(
                         server::error::LegacyCode::Misc.into(),
-                        format!("block was rejected: {:?}", response),
+                        format!("block was rejected: {response:?}"),
                         None::<()>,
                     ));
                 }
@@ -3058,6 +3041,145 @@ where
             ));
         }
     }
+
+    fn openrpc(&self) -> openrpsee::openrpc::Response {
+        let mut generator = openrpsee::openrpc::Generator::new();
+
+        let methods = METHODS
+            .into_iter()
+            .map(|(name, method)| method.generate(&mut generator, name))
+            .collect();
+
+        Ok(openrpsee::openrpc::OpenRpc {
+            openrpc: "1.3.2",
+            info: openrpsee::openrpc::Info {
+                title: env!("CARGO_PKG_NAME"),
+                description: env!("CARGO_PKG_DESCRIPTION"),
+                version: env!("CARGO_PKG_VERSION"),
+            },
+            methods,
+            components: generator.into_components(),
+        })
+    }
+    async fn get_tx_out(
+        &self,
+        txid: String,
+        n: u32,
+        include_mempool: Option<bool>,
+    ) -> Result<GetTxOutResponse> {
+        let txid = transaction::Hash::from_hex(txid)
+            .map_error(server::error::LegacyCode::InvalidParameter)?;
+
+        let outpoint = transparent::OutPoint {
+            hash: txid,
+            index: n,
+        };
+
+        // Optional mempool path
+        if include_mempool.unwrap_or(true) {
+            let rsp = self
+                .mempool
+                .clone()
+                .oneshot(mempool::Request::UnspentOutput(outpoint))
+                .await
+                .map_misc_error()?;
+
+            match rsp {
+                // Return the output found in the mempool
+                mempool::Response::TransparentOutput(Some(CreatedOrSpent::Created {
+                    output,
+                    tx_version,
+                    last_seen_hash,
+                })) => {
+                    return Ok(GetTxOutResponse(Some(
+                        types::transaction::OutputObject::from_output(
+                            &output,
+                            last_seen_hash.to_string(),
+                            0,
+                            tx_version,
+                            false,
+                            self.network(),
+                        ),
+                    )))
+                }
+                mempool::Response::TransparentOutput(Some(CreatedOrSpent::Spent)) => {
+                    return Ok(GetTxOutResponse(None))
+                }
+                mempool::Response::TransparentOutput(None) => {}
+                _ => unreachable!("unmatched response to an `UnspentOutput` request"),
+            };
+        }
+
+        // TODO: Ensure that the returned tip hash is always valid for the response, i.e. that Zebra can't return a tip that
+        //       hadn't yet included the queried transaction output.
+
+        // Get the best block tip hash
+        let tip_rsp = self
+            .read_state
+            .clone()
+            .oneshot(zebra_state::ReadRequest::Tip)
+            .await
+            .map_misc_error()?;
+
+        let best_block_hash = match tip_rsp {
+            zebra_state::ReadResponse::Tip(tip) => tip.ok_or_misc_error("No blocks in state")?.1,
+            _ => unreachable!("unmatched response to a `Tip` request"),
+        };
+
+        // State path
+        let rsp = self
+            .read_state
+            .clone()
+            .oneshot(zebra_state::ReadRequest::Transaction(txid))
+            .await
+            .map_misc_error()?;
+
+        match rsp {
+            zebra_state::ReadResponse::Transaction(Some(tx)) => {
+                let outputs = tx.tx.outputs();
+                let index: usize = n.try_into().expect("u32 always fits in usize");
+                let output = match outputs.get(index) {
+                    Some(output) => output,
+                    // return null if the output is not found
+                    None => return Ok(GetTxOutResponse(None)),
+                };
+
+                // Prune state outputs that are spent
+                let is_spent = {
+                    let rsp = self
+                        .read_state
+                        .clone()
+                        .oneshot(zebra_state::ReadRequest::IsTransparentOutputSpent(outpoint))
+                        .await
+                        .map_misc_error()?;
+
+                    match rsp {
+                        zebra_state::ReadResponse::IsTransparentOutputSpent(spent) => spent,
+                        _ => unreachable!(
+                            "unmatched response to an `IsTransparentOutputSpent` request"
+                        ),
+                    }
+                };
+
+                if is_spent {
+                    return Ok(GetTxOutResponse(None));
+                }
+
+                Ok(GetTxOutResponse(Some(
+                    types::transaction::OutputObject::from_output(
+                        output,
+                        best_block_hash.to_string(),
+                        tx.confirmations,
+                        tx.tx.version(),
+                        tx.tx.is_coinbase(),
+                        self.network(),
+                    ),
+                )))
+            }
+            zebra_state::ReadResponse::Transaction(None) => Ok(GetTxOutResponse(None)),
+            _ => unreachable!("unmatched response to a `Transaction` request"),
+        }
+    }
 }
 
 // TODO: Move the code below to separate modules.
@@ -3071,124 +3193,6 @@ where
     latest_chain_tip
         .best_tip_height()
         .ok_or_misc_error("No blocks in state")
-}
-
-fn bucket_fee_power_of_10(value: u64) -> u64 {
-    if value == 0 {
-        return 0;
-    }
-
-    let mut lower = 1u64;
-    while lower <= value / 10 {
-        lower *= 10;
-    }
-
-    let upper = lower.saturating_mul(10);
-    let lower_distance = value.saturating_sub(lower);
-    let upper_distance = upper.saturating_sub(value);
-
-    if upper_distance <= lower_distance {
-        upper
-    } else {
-        lower
-    }
-}
-
-async fn calculate_transaction_fee<S>(
-    read_state: &mut S,
-    tx_cache: &mut HashMap<transaction::Hash, (Arc<Transaction>, block::Height)>,
-    transaction: &Arc<Transaction>,
-    block_outputs: &HashMap<transparent::OutPoint, transparent::Output>,
-) -> Result<Option<Amount<NonNegative>>>
-where
-    S: ReadStateService,
-{
-    if transaction.is_coinbase() {
-        return Ok(None);
-    }
-
-    let mut spent_utxos: HashMap<transparent::OutPoint, transparent::Utxo> = HashMap::new();
-
-    for input in transaction.inputs() {
-        if let transparent::Input::PrevOut { outpoint, .. } = input {
-            if let Some(output) = block_outputs.get(outpoint) {
-                spent_utxos.insert(
-                    *outpoint,
-                    transparent::Utxo::new(output.clone(), block::Height(0), false),
-                );
-                continue;
-            }
-
-            let (prev_tx, prev_height) = if let Some(cached) = tx_cache.get(&outpoint.hash) {
-                cached.clone()
-            } else {
-                let request = ReadRequest::Transaction(outpoint.hash);
-                let response = read_state
-                    .ready()
-                    .and_then(|service| service.call(request))
-                    .await
-                    .map_error(server::error::LegacyCode::default())?;
-
-                let mined_tx = match response {
-                    ReadResponse::Transaction(Some(mined_tx)) => mined_tx,
-                    ReadResponse::Transaction(None) => {
-                        return Err(ErrorObject::borrowed(
-                            ErrorCode::InternalError.code(),
-                            "referenced transaction not found",
-                            None,
-                        ))
-                    }
-                    _ => unreachable!("unmatched response to a transaction request"),
-                };
-
-                let entry = (mined_tx.tx, mined_tx.height);
-                tx_cache.insert(outpoint.hash, entry.clone());
-                entry
-            };
-
-            let output = prev_tx
-                .outputs()
-                .get(outpoint.index as usize)
-                .ok_or_else(|| {
-                    ErrorObject::borrowed(
-                        ErrorCode::InternalError.code(),
-                        "referenced output not found",
-                        None,
-                    )
-                })?;
-
-            let from_coinbase = prev_tx.is_coinbase();
-            spent_utxos.insert(
-                *outpoint,
-                transparent::Utxo::new(output.clone(), prev_height, from_coinbase),
-            );
-        }
-    }
-
-    let value_balance = transaction.value_balance(&spent_utxos).map_err(|_| {
-        ErrorObject::borrowed(
-            ErrorCode::InternalError.code(),
-            "failed to compute transaction value balance",
-            None,
-        )
-    })?;
-    let remaining_value = value_balance.remaining_transaction_value().map_err(|_| {
-        ErrorObject::borrowed(
-            ErrorCode::InternalError.code(),
-            "failed to compute transaction remaining value",
-            None,
-        )
-    })?;
-    let zip233_amount = transaction.zip233_amount();
-    let fee = (remaining_value - zip233_amount).map_err(|_| {
-        ErrorObject::borrowed(
-            ErrorCode::InternalError.code(),
-            "failed to compute transaction fee",
-            None,
-        )
-    })?;
-
-    Ok(Some(fee))
 }
 
 /// Response to a `getinfo` RPC request.
@@ -3494,7 +3498,7 @@ impl GetBlockchainInfoResponse {
 }
 
 /// A request for [`RpcServer::get_address_balance`].
-#[derive(Clone, Debug, Eq, PartialEq, Hash, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, serde::Deserialize, serde::Serialize, JsonSchema)]
 #[serde(from = "DGetAddressBalanceRequest")]
 pub struct GetAddressBalanceRequest {
     /// A list of transparent address strings.
@@ -3515,7 +3519,7 @@ impl From<DGetAddressBalanceRequest> for GetAddressBalanceRequest {
 }
 
 /// An intermediate type used to deserialize [`AddressStrings`].
-#[derive(Clone, Debug, Eq, PartialEq, Hash, serde::Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, serde::Deserialize, JsonSchema)]
 #[serde(untagged)]
 enum DGetAddressBalanceRequest {
     /// A list of address strings.
@@ -3601,7 +3605,9 @@ pub struct GetAddressBalanceResponse {
 pub use self::GetAddressBalanceResponse as AddressBalance;
 
 /// Parameters of [`RpcServer::get_address_utxos`] RPC method.
-#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize, Getters, new)]
+#[derive(
+    Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize, Getters, new, JsonSchema,
+)]
 #[serde(from = "DGetAddressUtxosRequest")]
 pub struct GetAddressUtxosRequest {
     /// A list of addresses to get transactions from.
@@ -3631,7 +3637,7 @@ impl From<DGetAddressUtxosRequest> for GetAddressUtxosRequest {
 }
 
 /// An intermediate type used to deserialize [`GetAddressUtxosRequest`].
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, JsonSchema)]
 #[serde(untagged)]
 enum DGetAddressUtxosRequest {
     /// A single address string.
@@ -3810,6 +3816,7 @@ impl Default for GetBlockResponse {
             confirmations: 0,
             height: None,
             time: None,
+            n_tx: 0,
             tx: Vec::new(),
             trees: GetBlockTrees::default(),
             size: None,
@@ -3887,6 +3894,10 @@ pub struct BlockObject {
 
     // `chainhistoryroot` would be here. Undocumented. TODO: decide if we want to support it
     //
+    /// The number of transactions in this block.
+    #[serde(rename = "nTx")]
+    n_tx: usize,
+
     /// List of transactions in block order, hex-encoded if verbosity=1 or
     /// as objects if verbosity=2.
     tx: Vec<GetBlockTransaction>,
@@ -4284,7 +4295,9 @@ impl Utxo {
 /// Parameters of [`RpcServer::get_address_tx_ids`] RPC method.
 ///
 /// See [`RpcServer::get_address_tx_ids`] for more details.
-#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize, Getters, new)]
+#[derive(
+    Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize, Getters, new, JsonSchema,
+)]
 #[serde(from = "DGetAddressTxIdsRequest")]
 pub struct GetAddressTxIdsRequest {
     /// A list of addresses. The RPC method will get transactions IDs that sent or received
@@ -4339,7 +4352,7 @@ impl From<DGetAddressTxIdsRequest> for GetAddressTxIdsRequest {
 }
 
 /// An intermediate type used to deserialize [`GetAddressTxIdsRequest`].
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, JsonSchema)]
 #[serde(untagged)]
 enum DGetAddressTxIdsRequest {
     /// A single address string.
@@ -4693,9 +4706,16 @@ where
 }
 
 /// Commands for the `addnode` RPC method.
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize, JsonSchema)]
 pub enum AddNodeCommand {
     /// Add a node to the address book.
     #[serde(rename = "add")]
     Add,
 }
+
+/// Response to a `gettxout` RPC request.
+///
+/// See the notes for the [`Rpc::get_tx_out` method].
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct GetTxOutResponse(Option<types::transaction::OutputObject>);
