@@ -1,0 +1,5 @@
+.claude/
+target/
+config/zcash.conf
+/*.pdf
+fee-calculator/data/
