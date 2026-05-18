@@ -93,6 +93,31 @@ This endpoint is observational. Specifically:
    predict future miner behavior.
 
 
+# Status
+
+This ZIP defines a **v0 reference candidate** for `z_getstandardfees`. The algorithm
+parameters specified below are currently fixed in the canonical Zebra implementation,
+but at least three choices are explicitly subject to revision based on Phase 2
+"earthquake test" outcomes:
+
+- **Oracle:** v0 uses an action-weighted median; the nikete mechanism-design audit
+  recommends median-of-medians. To be settled by gate E4 (manipulation bounds) plus the
+  Stability falsifier, tested under the MedianPoisoning and MinerSelfDealing scenarios.
+- **Floor fee:** v0 uses 1,000 zats per action, which assumes the marginal-fee reduction
+  draft (5,000 → 1,000) has shipped on mainnet. Until that draft lands, the operative
+  floor on mainnet is 5,000.
+- **Quantization:** v0 uses powers-of-10 bucketing. Alternatives (powers of √10,
+  continuous-with-dispersion, alternative bucket scales) are under consideration; to be
+  settled by the Privacy falsifier under the BucketBoundaryNudging scenario.
+
+Implementations of v0 should match the algorithm below exactly. When Phase 2 settles a
+choice, the `version` field will bump (e.g. `v0` → `v0.1`, `v1`) and a new conformance
+vectors file will be published.
+
+Preliminary sweep results (2026-05-09) and the Phase 2 framework are documented at
+[fees.shieldedinfra.net/adversarial](https://fees.shieldedinfra.net/adversarial) and
+[fees.shieldedinfra.net/research/](https://fees.shieldedinfra.net/research/).
+
 # Specification
 
 ## RPC Method
@@ -106,7 +131,8 @@ Result: A JSON object with the following fields:
 | Field                    | Type    | Required | Description                                                                 |
 |--------------------------|---------|----------|-----------------------------------------------------------------------------|
 | `standard_fee`           | integer | Yes      | Recommended fee per logical action, in zatoshis.                            |
-| `express_fee`            | integer | No       | Priority fee per logical action, in zatoshis. Present only when congested.  |
+| `priority_fee`           | integer | Yes      | Priority fee per logical action, in zatoshis. Always equal to `standard_fee` × `priority_multiplier`. |
+| `congested`              | boolean | Yes      | `true` when the network is congested (paying priority buys faster inclusion). |
 | `version`                | string  | Yes      | Estimator version identifier (e.g. `"v0"`).                                |
 | `height`                 | integer | Yes      | The chain tip height at the time of computation.                            |
 | `how_is_this_calculated` | string  | Yes      | URI pointing to the estimator specification.                                |
@@ -117,7 +143,8 @@ Result: A JSON object with the following fields:
 ```json
 {
   "standard_fee": 1000,
-  "express_fee": null,
+  "priority_fee": 10000,
+  "congested": false,
   "version": "v0",
   "height": 2750000,
   "how_is_this_calculated": "https://zips.z.cash/zip-XXXX#fee-estimator-v0"
@@ -129,7 +156,8 @@ Result: A JSON object with the following fields:
 ```json
 {
   "standard_fee": 10000,
-  "express_fee": 100000,
+  "priority_fee": 100000,
+  "congested": true,
   "version": "v0",
   "height": 2750000,
   "how_is_this_calculated": "https://zips.z.cash/zip-XXXX#fee-estimator-v0"
@@ -160,10 +188,10 @@ ability to override.
 
 ## Fee Estimator v0
 
-This section defines the reference algorithm for computing `standard_fee` and
-`express_fee`. Implementations MUST produce identical outputs for the same
-chain state when using the same estimator version. Conformance is verified by
-published test vectors (see [Test Vectors](#test-vectors)).
+This section defines the reference algorithm for computing `standard_fee`,
+`priority_fee`, and `congested`. Implementations MUST produce identical outputs
+for the same chain state when using the same estimator version. Conformance is
+verified by published test vectors (see [Test Vectors](#test-vectors)).
 
 
 ### Parameters
@@ -174,7 +202,7 @@ published test vectors (see [Test Vectors](#test-vectors)).
 | b                    | 5     | Chain-tip buffer in blocks                                     |
 | floor                | 1,000 | Synthetic transaction fee per action, in zatoshis              |
 | block_capacity       | 2 MB  | Maximum block size for synthetic fill computation              |
-| express_multiplier   | 10    | Multiplier applied to `standard_fee` for the express tier      |
+| priority_multiplier  | 10    | Multiplier applied to `standard_fee` for the priority tier     |
 
 
 ### Lookback Window
@@ -215,7 +243,8 @@ with synthetic transactions:
 If a block contains no non-coinbase transactions, use `avg_tx_size` from the
 remaining blocks in *L*. If no block in *L* contains non-coinbase
 transactions, the estimator SHOULD return the current ZIP 317 conventional fee
-as `standard_fee` and omit `express_fee`.
+as `standard_fee`, the corresponding `priority_fee` (= `standard_fee` ×
+`priority_multiplier`), and `congested` = `false`.
 
 
 ### Median Computation
@@ -237,20 +266,21 @@ Round the raw median to the nearest power of 10:
 The `standard_fee` is max(*floor*, *bucketed*).
 
 
-### Congestion Detection and Express Fee
+### Priority Fee and Congestion Detection
 
-When real transactions have displaced all synthetic transactions from the
-lookback window, the median is driven entirely by organic demand and the
-network is considered congested.
+The `priority_fee` is always present in the response and is computed as:
 
-Formally, congestion is detected when the total synthetic count across all
-blocks in *L* is zero -- i.e. every block in the window is full.
+> `priority_fee` = `standard_fee` × `priority_multiplier`
 
-When congested:
+Wallets MAY surface this as a higher-priority option for users who want faster
+inclusion when the network is busy. Whether paying the priority fee actually
+buys faster inclusion is signaled by the separate `congested` flag.
 
-> `express_fee` = `standard_fee` x `express_multiplier`
-
-When not congested, `express_fee` is null / omitted.
+The `congested` flag is `true` when real transactions have displaced all
+synthetic transactions from the lookback window -- formally, when the total
+synthetic count across all blocks in *L* is zero (every block in the window is
+full). When `congested` is `false`, both tiers see equivalent inclusion times,
+and paying `priority_fee` does not buy meaningfully faster confirmation.
 
 
 ## Estimator Versioning
