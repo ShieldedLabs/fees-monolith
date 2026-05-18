@@ -32,8 +32,11 @@ var (
 const (
 	unitTestPath  = "unittestcache"
 	unitTestChain = "unittestnet"
+	testTxid      = "1234000000000000000000000000000000000000000000000000000000000000"
+	testBlockid   = "0000000000000000000000000000000000000000000000000000000000380640"
 )
 
+// block 380640 used here is a real block from testnet
 func testsetup() (walletrpc.CompactTxStreamerServer, *common.BlockCache) {
 	os.RemoveAll(unitTestPath)
 	cache := common.NewBlockCache(unitTestPath, unitTestChain, 380640, 0)
@@ -107,7 +110,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestGetTransaction(t *testing.T) {
-	// GetTransaction() will mostly be tested below via TestGetTaddressTxids
+	// GetTransaction() will mostly be tested below via TestGetTaddressTransactions
 	lwd, _ := testsetup()
 
 	rawtx, err := lwd.GetTransaction(context.Background(),
@@ -115,7 +118,7 @@ func TestGetTransaction(t *testing.T) {
 	if err == nil {
 		testT.Fatal("GetTransaction unexpectedly succeeded")
 	}
-	if err.Error() != "please call GetTransaction with txid" {
+	if !strings.Contains(err.Error(), "GetTransaction: specify a txid") {
 		testT.Fatal("GetTransaction unexpected error message")
 	}
 	if rawtx != nil {
@@ -127,7 +130,7 @@ func TestGetTransaction(t *testing.T) {
 	if err == nil {
 		testT.Fatal("GetTransaction unexpectedly succeeded")
 	}
-	if err.Error() != "can't GetTransaction with a blockhash+num, please call GetTransaction with txid" {
+	if !strings.Contains(err.Error(), "GetTransaction: specify a txid, not a blockhash+num") {
 		testT.Fatal("GetTransaction unexpected error message")
 	}
 	if rawtx != nil {
@@ -153,7 +156,7 @@ func getLatestBlockStub(method string, params []json.RawMessage) (json.RawMessag
 			testT.Fatal("unexpected getblock height", arg)
 		}
 		// verbose mode (getblock height 1), return transaction list
-		return []byte("{\"Tx\": [\"00\"], \"Hash\": \"0000380640\"}"), nil
+		return []byte("{\"Tx\": [\"" + testTxid + "\"], \"Hash\": \"" + testBlockid + "\"}"), nil
 	case 2:
 		if method != "getblock" {
 			testT.Fatal("unexpected method:", method)
@@ -163,7 +166,7 @@ func getLatestBlockStub(method string, params []json.RawMessage) (json.RawMessag
 		if err != nil {
 			testT.Fatal("could not unmarshal height")
 		}
-		if arg != "0000380640" {
+		if arg != testBlockid {
 			testT.Fatal("unexpected getblock hash", arg)
 		}
 		return blocks[0], nil
@@ -173,7 +176,7 @@ func getLatestBlockStub(method string, params []json.RawMessage) (json.RawMessag
 		}
 		return []byte("{\"Blocks\": 380640, " +
 			"\"BestBlockHash\": " +
-			"\"913b07faeb835a29bd3a1727876fe1c65aaeb10c7cde36ccd038b2b3445e0a00\"}"), nil
+			"\"000a5e44b3b238d0cc36de7c0cb1ae5ac6e16f8727173abd295a83ebfa073b91\"}"), nil
 
 	case 4:
 		return nil, errors.New("getblock test error, too many requests")
@@ -266,7 +269,7 @@ func zcashdrpcStub(method string, params []json.RawMessage) (json.RawMessage, er
 }
 
 type testgettx struct {
-	walletrpc.CompactTxStreamer_GetTaddressTxidsServer
+	walletrpc.CompactTxStreamer_GetTaddressTransactionsServer
 }
 
 func (tg *testgettx) Context() context.Context {
@@ -283,7 +286,7 @@ func (tg *testgettx) Send(tx *walletrpc.RawTransaction) error {
 	return nil
 }
 
-func TestGetTaddressTxids(t *testing.T) {
+func TestGetTaddressTransactions(t *testing.T) {
 	testT = t
 	common.RawRequest = zcashdrpcStub
 	lwd, _ := testsetup()
@@ -298,38 +301,38 @@ func TestGetTaddressTxids(t *testing.T) {
 	// Ensure that a bad address is detected
 	for i, addressTest := range addressTests {
 		addressBlockFilter.Address = addressTest
-		err := lwd.GetTaddressTxids(addressBlockFilter, &testgettx{})
+		err := lwd.GetTaddressTransactions(addressBlockFilter, &testgettx{})
 		if err == nil {
-			t.Fatal("GetTaddressTxids should have failed on bad address, case", i)
+			t.Fatal("GetTaddressTransactions should have failed on bad address, case", i)
 		}
-		if err.Error() != "invalid address" {
-			t.Fatal("GetTaddressTxids incorrect error on bad address, case", i)
+		if !strings.Contains(err.Error(), "invalid characters") {
+			t.Fatal("GetTaddressTransactions incorrect error on bad address, case", i)
 		}
 	}
 
 	// valid address
 	addressBlockFilter.Address = "t1234567890123456789012345678901234"
-	err := lwd.GetTaddressTxids(addressBlockFilter, &testgettx{})
+	err := lwd.GetTaddressTransactions(addressBlockFilter, &testgettx{})
 	if err != nil {
-		t.Fatal("GetTaddressTxids failed", err)
+		t.Fatal("GetTaddressTransactions failed", err)
 	}
 
 	// this time GetTransaction() will return an error
-	err = lwd.GetTaddressTxids(addressBlockFilter, &testgettx{})
+	err = lwd.GetTaddressTransactions(addressBlockFilter, &testgettx{})
 	if err == nil {
-		t.Fatal("GetTaddressTxids succeeded")
+		t.Fatal("GetTaddressTransactions succeeded")
 	}
 	step = 0
 }
 
-func TestGetTaddressTxidsNilArgs(t *testing.T) {
+func TestGetTaddressTransactionsNilArgs(t *testing.T) {
 	lwd, _ := testsetup()
 
 	{
 		noRange := &walletrpc.TransparentAddressBlockFilter{
 			Range: nil,
 		}
-		err := lwd.GetTaddressTxids(noRange, &testgettx{})
+		err := lwd.GetTaddressTransactions(noRange, &testgettx{})
 		if err == nil {
 			t.Fatal("GetBlockRange nil range argument should fail")
 		}
@@ -341,7 +344,7 @@ func TestGetTaddressTxidsNilArgs(t *testing.T) {
 				End:   &walletrpc.BlockID{Height: 20},
 			},
 		}
-		err := lwd.GetTaddressTxids(noStart, &testgettx{})
+		err := lwd.GetTaddressTransactions(noStart, &testgettx{})
 		if err == nil {
 			t.Fatal("GetBlockRange nil range argument should fail")
 		}
@@ -353,7 +356,7 @@ func TestGetTaddressTxidsNilArgs(t *testing.T) {
 				End:   nil,
 			},
 		}
-		err := lwd.GetTaddressTxids(noEnd, &testgettx{})
+		err := lwd.GetTaddressTransactions(noEnd, &testgettx{})
 		if err == nil {
 			t.Fatal("GetBlockRange nil range argument should fail")
 		}
@@ -378,9 +381,9 @@ func getblockStub(method string, params []json.RawMessage) (json.RawMessage, err
 			testT.Fatal("unexpected getblock height", arg)
 		}
 		// verbose mode (getblock height 1), return transaction list
-		return []byte("{\"Tx\": [\"00\"], \"Hash\": \"0000380640\"}"), nil
+		return []byte("{\"Tx\": [\"" + testTxid + "\"], \"Hash\": \"" + testBlockid + "\"}"), nil
 	case 2:
-		if arg != "0000380640" {
+		if arg != testBlockid {
 			testT.Fatal("unexpected getblock height", arg)
 		}
 		return blocks[0], nil
@@ -408,7 +411,7 @@ func TestGetBlock(t *testing.T) {
 	if err == nil {
 		t.Fatal("GetBlock should have failed")
 	}
-	if err.Error() != "gRPC GetBlock by Hash is not yet implemented" {
+	if !strings.Contains(err.Error(), "GetBlock: Block hash specifier is not yet implemented") {
 		t.Fatal("GetBlock hash unimplemented error message failed")
 	}
 

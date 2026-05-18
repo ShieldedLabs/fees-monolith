@@ -4,7 +4,6 @@
 package parser
 
 import (
-	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -49,15 +48,15 @@ func TestCompactBlocks(t *testing.T) {
 			t.Errorf("incorrect block height in testnet block %d", test.BlockHeight)
 			continue
 		}
-		if hex.EncodeToString(block.GetDisplayHash()) != test.BlockHash {
+		if block.GetDisplayHashString() != test.BlockHash {
 			t.Errorf("incorrect block hash in testnet block %x", test.BlockHash)
 			continue
 		}
-		if hex.EncodeToString(block.GetDisplayPrevHash()) != test.PrevHash {
+		if block.GetDisplayPrevHashString() != test.PrevHash {
 			t.Errorf("incorrect block prevhash in testnet block %x", test.BlockHash)
 			continue
 		}
-		if !bytes.Equal(block.GetPrevHash(), block.hdr.HashPrevBlock) {
+		if block.GetPrevHash() != block.hdr.HashPrevBlock {
 			t.Error("block and block header prevhash don't match")
 		}
 
@@ -70,7 +69,6 @@ func TestCompactBlocks(t *testing.T) {
 		encodedCompact := hex.EncodeToString(marshaled)
 		if encodedCompact != test.Compact {
 			t.Errorf("wrong data for compact testnet block %d\nhave: %s\nwant: %s\n", test.BlockHeight, encodedCompact, test.Compact)
-			break
 		}
 	}
 

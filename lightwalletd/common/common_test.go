@@ -6,6 +6,7 @@ package common
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,6 +31,13 @@ var (
 	logger    = logrus.New()
 	blocks    [][]byte // four test blocks
 	testcache *BlockCache
+)
+
+const (
+	testTxid      = "1234000000000000000000000000000000000000000000000000000000000000"
+	testBlockid40 = "0000000000000000000000000000000000000000000000000000000000380640"
+	testBlockid41 = "0000000000000000000000000000000000000000000000000000000000380641"
+	testBlockid42 = "0000000000000000000000000000000000000000000000000000000000380642"
 )
 
 // TestMain does common setup that's shared across multiple tests
@@ -103,6 +111,23 @@ func getLightdInfoStub(method string, params []json.RawMessage) (json.RawMessage
 			Blocks:    9977,
 			Chain:     "bugsbunny",
 			Consensus: ConsensusInfo{Chaintip: "someid"},
+			Upgrades: map[string]Upgradeinfo{
+				"a": {
+					Name:             "a",
+					ActivationHeight: 5,
+					Status:           "active",
+				},
+				"b": {
+					Name:             "b",
+					ActivationHeight: 6,
+					Status:           "pending",
+				},
+				"c": {
+					Name:             "c",
+					ActivationHeight: 7,
+					Status:           "pending",
+				},
+			},
 		})
 		return r, nil
 	}
@@ -151,6 +176,14 @@ func TestGetLightdInfo(t *testing.T) {
 	if getLightdInfo.DonationAddress != "ua1234test" {
 		t.Error("unexpected DonationAddress", getLightdInfo.DonationAddress)
 	}
+	// If more than one network upgrade is pending, the closest
+	// (next) should be reported.
+	if getLightdInfo.UpgradeName != "b" {
+		t.Error("unexpected UpgradeName", getLightdInfo.UpgradeName)
+	}
+	if getLightdInfo.UpgradeHeight != 6 {
+		t.Error("unexpected UpgradeHeight", getLightdInfo.UpgradeHeight)
+	}
 
 	if sleepCount != 1 || sleepDuration != 15*time.Second {
 		t.Error("unexpected sleeps", sleepCount, sleepDuration)
@@ -196,7 +229,7 @@ func blockIngestorStub(method string, params []json.RawMessage) (json.RawMessage
 	case 1:
 		checkSleepMethod(0, 0, "getbestblockhash", method)
 		// This hash doesn't matter, won't match anything
-		r, _ := json.Marshal("010101")
+		r, _ := json.Marshal(strings.Repeat("01", 32))
 		return r, nil
 	case 2:
 		checkSleepMethod(0, 0, "getblock", method)
@@ -204,17 +237,17 @@ func blockIngestorStub(method string, params []json.RawMessage) (json.RawMessage
 			testT.Fatal("incorrect height requested")
 		}
 		// height 380640
-		return []byte("{\"Tx\": [\"00\"], \"Hash\": \"0000380640\"}"), nil
+		return []byte("{\"Tx\": [\"" + testTxid + "\"], \"Hash\": \"" + testBlockid40 + "\"}"), nil
 	case 3:
 		checkSleepMethod(0, 0, "getblock", method)
-		if arg != "0000380640" {
+		if arg != testBlockid40 {
 			testT.Fatal("incorrect hash requested")
 		}
 		return blocks[0], nil
 	case 4:
 		checkSleepMethod(0, 0, "getbestblockhash", method)
 		// This hash doesn't matter, won't match anything
-		r, _ := json.Marshal("010101")
+		r, _ := json.Marshal(strings.Repeat("01", 32))
 		return r, nil
 	case 5:
 		checkSleepMethod(0, 0, "getblock", method)
@@ -222,10 +255,10 @@ func blockIngestorStub(method string, params []json.RawMessage) (json.RawMessage
 			testT.Fatal("incorrect height requested")
 		}
 		// height 380641
-		return []byte("{\"Tx\": [\"00\"], \"Hash\": \"0000380641\"}"), nil
+		return []byte("{\"Tx\": [\"" + testTxid + "\"], \"Hash\": \"" + testBlockid41 + "\"}"), nil
 	case 6:
 		checkSleepMethod(0, 0, "getblock", method)
-		if arg != "0000380641" {
+		if arg != testBlockid41 {
 			testT.Fatal("incorrect hash requested")
 		}
 		return blocks[1], nil
@@ -244,7 +277,7 @@ func blockIngestorStub(method string, params []json.RawMessage) (json.RawMessage
 	case 9:
 		// Simulate new block (any non-matching hash will do)
 		checkSleepMethod(2, 4, "getbestblockhash", method)
-		r, _ := json.Marshal("aabb")
+		r, _ := json.Marshal(strings.Repeat("ab", 32))
 		return r, nil
 	case 10:
 		checkSleepMethod(2, 4, "getblock", method)
@@ -252,10 +285,10 @@ func blockIngestorStub(method string, params []json.RawMessage) (json.RawMessage
 			testT.Fatal("incorrect height requested")
 		}
 		// height 380642
-		return []byte("{\"Tx\": [\"00\"], \"Hash\": \"0000380642\"}"), nil
+		return []byte("{\"Tx\": [\"" + testTxid + "\"], \"Hash\": \"" + testBlockid42 + "\"}"), nil
 	case 11:
 		checkSleepMethod(2, 4, "getblock", method)
-		if arg != "0000380642" {
+		if arg != testBlockid42 {
 			testT.Fatal("incorrect hash requested")
 		}
 		return blocks[2], nil
@@ -270,7 +303,7 @@ func blockIngestorStub(method string, params []json.RawMessage) (json.RawMessage
 		// simulate a 1-block reorg, new version (replacement) of 380642
 		checkSleepMethod(3, 6, "getbestblockhash", method)
 		// hash doesn't matter, just something that doesn't match
-		r, _ := json.Marshal("4545")
+		r, _ := json.Marshal(strings.Repeat("45", 32))
 		return r, nil
 	case 14:
 		// It thinks there may simply be a new block, but we'll say
@@ -284,7 +317,7 @@ func blockIngestorStub(method string, params []json.RawMessage) (json.RawMessage
 		// It will re-ask the best hash (let's make no change)
 		checkSleepMethod(3, 6, "getbestblockhash", method)
 		// hash doesn't matter, just something that doesn't match
-		r, _ := json.Marshal("4545")
+		r, _ := json.Marshal(strings.Repeat("45", 32))
 		return r, nil
 	case 16:
 		// It should have backed up one block
@@ -293,10 +326,10 @@ func blockIngestorStub(method string, params []json.RawMessage) (json.RawMessage
 			testT.Fatal("incorrect height requested")
 		}
 		// height 380642
-		return []byte("{\"Tx\": [\"00\"], \"Hash\": \"0000380642\"}"), nil
+		return []byte("{\"Tx\": [\"" + testTxid + "\"], \"Hash\": \"" + testBlockid42 + "\"}"), nil
 	case 17:
 		checkSleepMethod(3, 6, "getblock", method)
-		if arg != "0000380642" {
+		if arg != testBlockid42 {
 			testT.Fatal("incorrect height requested")
 		}
 		return blocks[2], nil
@@ -305,7 +338,7 @@ func blockIngestorStub(method string, params []json.RawMessage) (json.RawMessage
 		// we'll make it back up 2 blocks (rather than one)
 		checkSleepMethod(3, 6, "getbestblockhash", method)
 		// hash doesn't matter, just something that doesn't match
-		r, _ := json.Marshal("5656")
+		r, _ := json.Marshal(strings.Repeat("56", 32))
 		return r, nil
 	case 19:
 		// It thinks there may simply be a new block, but we'll say
@@ -318,7 +351,7 @@ func blockIngestorStub(method string, params []json.RawMessage) (json.RawMessage
 	case 20:
 		checkSleepMethod(3, 6, "getbestblockhash", method)
 		// hash doesn't matter, just something that doesn't match
-		r, _ := json.Marshal("5656")
+		r, _ := json.Marshal(strings.Repeat("56", 32))
 		return r, nil
 	case 21:
 		// Like case 13, it should have backed up one block, but
@@ -331,7 +364,7 @@ func blockIngestorStub(method string, params []json.RawMessage) (json.RawMessage
 	case 22:
 		checkSleepMethod(3, 6, "getbestblockhash", method)
 		// hash doesn't matter, just something that doesn't match
-		r, _ := json.Marshal("5656")
+		r, _ := json.Marshal(strings.Repeat("56", 32))
 		return r, nil
 	case 23:
 		// It should have backed up one more
@@ -339,10 +372,10 @@ func blockIngestorStub(method string, params []json.RawMessage) (json.RawMessage
 		if arg != "380641" {
 			testT.Fatal("incorrect height requested")
 		}
-		return []byte("{\"Tx\": [\"00\"], \"Hash\": \"0000380641\"}"), nil
+		return []byte("{\"Tx\": [\"" + testTxid + "\"], \"Hash\": \"" + testBlockid41 + "\"}"), nil
 	case 24:
 		checkSleepMethod(3, 6, "getblock", method)
-		if arg != "0000380641" {
+		if arg != testBlockid41 {
 			testT.Fatal("incorrect height requested")
 		}
 		return blocks[1], nil
@@ -385,17 +418,17 @@ func getblockStub(method string, params []json.RawMessage) (json.RawMessage, err
 	step++
 	switch step {
 	case 1:
-		return []byte("{\"Tx\": [\"00\"], \"Hash\": \"0000380640\"}"), nil
+		return []byte("{\"Tx\": [\"" + testTxid + "\"], \"Hash\": \"" + testBlockid40 + "\"}"), nil
 	case 2:
-		if arg != "0000380640" {
+		if arg != testBlockid40 {
 			testT.Error("unexpected hash")
 		}
 		// Sunny-day
 		return blocks[0], nil
 	case 3:
-		return []byte("{\"Tx\": [\"00\"], \"Hash\": \"0000380641\"}"), nil
+		return []byte("{\"Tx\": [\"" + testTxid + "\"], \"Hash\": \"" + testBlockid41 + "\"}"), nil
 	case 4:
-		if arg != "0000380641" {
+		if arg != testBlockid41 {
 			testT.Error("unexpected hash")
 		}
 		// Sunny-day
@@ -418,7 +451,11 @@ func TestGetBlockRange(t *testing.T) {
 	testcache = NewBlockCache(unitTestPath, unitTestChain, 380640, 0)
 	blockChan := make(chan *walletrpc.CompactBlock)
 	errChan := make(chan error)
-	go GetBlockRange(testcache, blockChan, errChan, 380640, 380642)
+	blockRange := &walletrpc.BlockRange{
+		Start: &walletrpc.BlockID{Height: 380640},
+		End:   &walletrpc.BlockID{Height: 380642},
+	}
+	go GetBlockRange(context.Background(), testcache, blockChan, errChan, blockRange)
 
 	// read in block 380640
 	select {
@@ -446,7 +483,7 @@ func TestGetBlockRange(t *testing.T) {
 	select {
 	case err := <-errChan:
 		// this will also catch context.DeadlineExceeded from the timeout
-		if err.Error() != "block requested is newer than latest block" {
+		if !strings.Contains(err.Error(), "newer than the latest block") {
 			t.Fatal("unexpected error:", err)
 		}
 	case <-blockChan:
@@ -475,9 +512,9 @@ func getblockStubReverse(method string, params []json.RawMessage) (json.RawMessa
 			testT.Error("unexpected height")
 		}
 		// Sunny-day
-		return []byte("{\"Tx\": [\"00\"], \"Hash\": \"0000380642\"}"), nil
+		return []byte("{\"Tx\": [\"" + testTxid + "\"], \"Hash\": \"" + testBlockid42 + "\"}"), nil
 	case 2:
-		if arg != "0000380642" {
+		if arg != testBlockid42 {
 			testT.Error("unexpected hash")
 		}
 		return blocks[2], nil
@@ -486,9 +523,9 @@ func getblockStubReverse(method string, params []json.RawMessage) (json.RawMessa
 			testT.Error("unexpected height")
 		}
 		// Sunny-day
-		return []byte("{\"Tx\": [\"00\"], \"Hash\": \"0000380641\"}"), nil
+		return []byte("{\"Tx\": [\"" + testTxid + "\"], \"Hash\": \"" + testBlockid41 + "\"}"), nil
 	case 4:
-		if arg != "0000380641" {
+		if arg != testBlockid41 {
 			testT.Error("unexpected hash")
 		}
 		return blocks[1], nil
@@ -497,9 +534,9 @@ func getblockStubReverse(method string, params []json.RawMessage) (json.RawMessa
 			testT.Error("unexpected height")
 		}
 		// Sunny-day
-		return []byte("{\"Tx\": [\"00\"], \"Hash\": \"0000380640\"}"), nil
+		return []byte("{\"Tx\": [\"" + testTxid + "\"], \"Hash\": \"" + testBlockid40 + "\"}"), nil
 	case 6:
-		if arg != "0000380640" {
+		if arg != testBlockid40 {
 			testT.Error("unexpected hash")
 		}
 		return blocks[0], nil
@@ -517,7 +554,11 @@ func TestGetBlockRangeReverse(t *testing.T) {
 	errChan := make(chan error)
 
 	// Request the blocks in reverse order by specifying start greater than end
-	go GetBlockRange(testcache, blockChan, errChan, 380642, 380640)
+	blockRange := &walletrpc.BlockRange{
+		Start: &walletrpc.BlockID{Height: 380642},
+		End:   &walletrpc.BlockID{Height: 380640},
+	}
+	go GetBlockRange(context.Background(), testcache, blockChan, errChan, blockRange)
 
 	// read in block 380642
 	select {
