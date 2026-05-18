@@ -127,8 +127,10 @@ async fn z_getstandardfees_happy_path() {
 
     // With tiny blocks and 2MB capacity, synthetic fill dominates → median at floor (1000)
     assert_eq!(response.standard_fee, 1000);
-    // Not congested (huge synthetic fill) → no express fee
-    assert!(response.express_fee.is_none());
+    // Priority fee is always 10× standard, regardless of congestion
+    assert_eq!(response.priority_fee, 10_000);
+    // Not congested (huge synthetic fill)
+    assert!(!response.congested);
     assert_eq!(response.version, "v0");
     assert_eq!(response.height, 55);
 

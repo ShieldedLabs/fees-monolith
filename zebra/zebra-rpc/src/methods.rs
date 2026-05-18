@@ -2805,7 +2805,7 @@ where
 
         const REORG_BUFFER: u32 = 5;
         const LOOKBACK_WINDOW: u32 = 50;
-        const EXPRESS_MULTIPLIER: u64 = 10;
+        const PRIORITY_MULTIPLIER: u64 = 10;
         const FLOOR_FEE: u64 = 1000;
         const BLOCK_CAPACITY: u64 = 2_000_000;
         const GRACE_ACTIONS: u64 = 2;
@@ -2908,7 +2908,8 @@ where
         if total_tx_count == 0 {
             return Ok(ZGetStandardFeesResponse::new(
                 ZIP_317_CONVENTIONAL_FEE,
-                None,
+                ZIP_317_CONVENTIONAL_FEE.saturating_mul(PRIORITY_MULTIPLIER),
+                false,
                 "v0".to_string(),
                 tip_u64,
                 SPEC_URL.to_string(),
@@ -2940,7 +2941,8 @@ where
         if fee_multiset.is_empty() {
             return Ok(ZGetStandardFeesResponse::new(
                 ZIP_317_CONVENTIONAL_FEE,
-                None,
+                ZIP_317_CONVENTIONAL_FEE.saturating_mul(PRIORITY_MULTIPLIER),
+                false,
                 "v0".to_string(),
                 tip_u64,
                 SPEC_URL.to_string(),
@@ -2959,16 +2961,16 @@ where
         let bucketed = bucket_fee_power_of_10(raw_median);
         let standard_fee = FLOOR_FEE.max(bucketed);
 
-        // Congestion detection: express fee only when all blocks are full
-        let express_fee = if total_synthetic_count == 0 {
-            Some(standard_fee.saturating_mul(EXPRESS_MULTIPLIER))
-        } else {
-            None
-        };
+        // Priority fee is always 10× standard. Congestion is signaled separately:
+        // it indicates whether paying priority actually buys faster inclusion
+        // (true when all blocks in the lookback window were full).
+        let priority_fee = standard_fee.saturating_mul(PRIORITY_MULTIPLIER);
+        let congested = total_synthetic_count == 0;
 
         Ok(ZGetStandardFeesResponse::new(
             standard_fee,
-            express_fee,
+            priority_fee,
+            congested,
             "v0".to_string(),
             tip_u64,
             SPEC_URL.to_string(),
