@@ -66,13 +66,38 @@ header .container {
   gap: 10px;
   font-weight: 700;
   font-size: 1.1rem;
+  color: var(--text);
+  text-decoration: none;
+}
+.logo:hover {
+  color: var(--text);
+  text-decoration: none;
+  opacity: 0.85;
 }
 .logo img {
   display: block;
 }
+
+.nav-toggle {
+  display: none;
+  background: none;
+  border: 0;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  align-items: center;
+  justify-content: center;
+}
+.nav-toggle:hover {
+  color: var(--text);
+  background: var(--bg-elevated);
+}
+
 nav {
   display: flex;
   gap: 24px;
+  position: relative;
 }
 nav a {
   color: var(--text-muted);
@@ -83,17 +108,188 @@ nav a:hover {
   text-decoration: none;
 }
 
-/* ---- Hero ---- */
+/* ---- Hero (portal: assumptions) ---- */
 
 #hero {
-  padding: 80px 0 60px;
-  text-align: center;
+  padding: 72px 0 40px;
 }
 #hero h1 {
-  font-size: 1.8rem;
+  font-size: 1.9rem;
   font-weight: 600;
-  margin-bottom: 40px;
+  margin-bottom: 16px;
   color: var(--text);
+  line-height: 1.25;
+  max-width: 720px;
+}
+#hero h1 strong {
+  color: var(--accent);
+  font-weight: inherit;
+}
+.hero-lead {
+  font-size: 1.05rem;
+  color: var(--text-muted);
+  line-height: 1.7;
+  margin-bottom: 28px;
+  max-width: 720px;
+}
+.hero-lead strong {
+  color: var(--accent);
+  font-weight: 600;
+}
+.assumptions {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 720px;
+}
+.assumptions li {
+  position: relative;
+  padding: 12px 16px 12px 36px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: var(--text);
+}
+.assumptions li::before {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: 22px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.assumptions strong {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ---- Idea (flow diagram) ---- */
+
+.flow-diagram {
+  display: grid;
+  grid-template-columns: 1fr 16px 1fr 16px 1fr 16px 1fr;
+  gap: 8px;
+  align-items: stretch;
+  margin: 24px 0 16px;
+}
+.flow-step {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 12px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 6px;
+}
+.flow-step.output {
+  border-color: var(--accent);
+}
+.flow-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.flow-label code {
+  font-size: 0.85em;
+}
+.flow-body {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.flow-body code {
+  font-size: 0.95em;
+}
+.flow-tag {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  margin-top: 4px;
+}
+.flow-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+}
+
+/* ---- Live readings ---- */
+
+#live {
+  padding: 56px 0;
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+#live h2 {
+  font-size: 1.3rem;
+  margin-bottom: 12px;
+}
+#live .section-lead {
+  margin-left: auto;
+  margin-right: auto;
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+/* ---- History chart ---- */
+
+.chart-container {
+  margin-top: 40px;
+  text-align: left;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px 24px;
+}
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 16px;
+}
+.chart-header h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.chart-export {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.chart-export:hover {
+  color: var(--accent);
+  text-decoration: none;
+}
+.chart-canvas-wrap {
+  position: relative;
+  height: 240px;
+  width: 100%;
+}
+.chart-canvas-wrap canvas {
+  max-width: 100%;
+}
+.chart-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-style: italic;
 }
 
 .fee-cards {
@@ -441,11 +637,639 @@ footer {
   color: var(--text-muted);
 }
 
+/* ---- Active nav indicator ---- */
+
+nav a.active {
+  color: var(--text);
+  position: relative;
+}
+nav a.active::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+}
+
+/* ---- Page hero (used on /design, /adversarial, /interactions) ---- */
+
+#page-hero {
+  padding: 60px 0 32px;
+}
+.page-eyebrow {
+  display: inline-block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 12px;
+}
+#page-hero h1 {
+  font-size: 1.7rem;
+  font-weight: 600;
+  margin-bottom: 16px;
+  line-height: 1.3;
+}
+.page-lead {
+  font-size: 1rem;
+  color: var(--text-muted);
+  line-height: 1.7;
+  max-width: 640px;
+}
+.page-lead strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* ---- Section leads ---- */
+
+.section-lead {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  margin-bottom: 24px;
+  max-width: 640px;
+}
+
+/* ---- Generic section spacing for new pages ---- */
+
+#intro,
+#portal,
+#principles,
+#stack,
+#rejected,
+#open-questions,
+#open-design,
+#chain,
+#gates,
+#falsifiers,
+#scenarios,
+#about-sim,
+#separation,
+#crosslink,
+#nsm,
+#idea,
+#privacy {
+  padding: 56px 0;
+  border-top: 1px solid var(--border);
+}
+#intro h2,
+#portal h2,
+#principles h2,
+#stack h2,
+#rejected h2,
+#open-questions h2,
+#chain h2,
+#gates h2,
+#falsifiers h2,
+#scenarios h2,
+#about-sim h2,
+#separation h2,
+#crosslink h2,
+#nsm h2,
+#idea h2,
+#privacy h2,
+#open-design h2 {
+  font-size: 1.3rem;
+  margin-bottom: 12px;
+}
+
+/* ---- Open design choices table ---- */
+
+.open-design-table {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+.open-design-row {
+  display: grid;
+  grid-template-columns: 130px 1fr 1fr;
+  grid-template-areas:
+    "choice current alt"
+    "settled settled settled";
+  gap: 8px 16px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  padding: 16px 20px;
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+.open-design-choice {
+  grid-area: choice;
+  font-weight: 600;
+  color: var(--text);
+}
+.open-design-current {
+  grid-area: current;
+  color: var(--text);
+}
+.open-design-alt {
+  grid-area: alt;
+  color: var(--text-muted);
+}
+.open-design-settled {
+  grid-area: settled;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.open-design-settled::before {
+  content: "Settled by: ";
+  color: var(--accent);
+  font-weight: 600;
+}
+.open-design-note {
+  color: var(--text-muted);
+  font-size: 0.85em;
+  font-style: italic;
+}
+@media (max-width: 640px) {
+  .open-design-row {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "choice"
+      "current"
+      "alt"
+      "settled";
+  }
+}
+
+/* ---- Section eyebrow (maps section to h1 principle) ---- */
+
+.section-eyebrow {
+  display: inline-block;
+  font-size: 0.7rem;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+/* ---- Privacy section ---- */
+
+.privacy-cards {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin: 16px 0;
+}
+.privacy-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 18px 20px;
+}
+.privacy-card h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--text);
+}
+.privacy-card p {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+.privacy-card code {
+  font-size: 0.95em;
+}
+#privacy .footnote {
+  margin-top: 20px;
+}
+#privacy .footnote strong {
+  color: var(--text);
+  font-weight: 600;
+}
+#intro p,
+#about-sim p,
+#separation p,
+#crosslink p,
+#nsm p {
+  color: var(--text);
+  font-size: 0.95rem;
+  line-height: 1.7;
+  margin-bottom: 16px;
+  max-width: 640px;
+}
+#intro p:last-child,
+#about-sim p:last-child,
+#separation p:last-child,
+#crosslink p:last-child,
+#nsm p:last-child {
+  margin-bottom: 0;
+}
+
+/* ---- Portal cards (homepage) ---- */
+
+.portal-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+.portal-card {
+  display: block;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  color: var(--text);
+  transition: border-color 0.2s, transform 0.2s;
+}
+.portal-card:hover {
+  border-color: var(--accent);
+  text-decoration: none;
+  transform: translateY(-2px);
+}
+.portal-card h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.portal-card p {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+.portal-cta {
+  font-size: 0.8rem;
+  color: var(--accent);
+  font-family: var(--mono);
+}
+
+/* ---- Principle cards (/design) ---- */
+
+.principle-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+.principle-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+}
+.principle-card h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+.principle-card p {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+/* ---- Layer stack (/design) ---- */
+
+.layer-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.layer {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  padding: 20px 24px;
+}
+.layer-meta {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 4px;
+}
+.layer-meta a {
+  color: var(--text-muted);
+  text-decoration: underline;
+}
+.layer-meta a:hover {
+  color: var(--accent);
+}
+.layer-name {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+.layer-name code {
+  font-size: 0.95em;
+}
+.layer p {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin-bottom: 8px;
+}
+.layer p:last-child {
+  margin-bottom: 0;
+}
+.formula {
+  font-family: var(--mono);
+  background: var(--bg);
+  padding: 12px 16px;
+  border-radius: 6px;
+  margin: 12px 0;
+}
+.callout {
+  background: var(--bg);
+  border-left: 2px solid var(--text-muted);
+  padding: 12px 16px;
+  margin: 12px 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+.callout strong {
+  color: var(--text);
+}
+.callout-data {
+  border-left-color: var(--accent);
+  background: var(--bg-surface);
+  margin-top: 24px;
+  padding: 16px 20px;
+  font-size: 0.9rem;
+}
+.callout-data code {
+  background: var(--bg);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+/* ---- Rejected list (/design) ---- */
+
+.rejected-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.rejected-item {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px 24px;
+}
+.rejected-item h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--text-muted);
+}
+.rejected-item p {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+/* ---- Open questions (/design) ---- */
+
+.open-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0;
+}
+.open-list li {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 20px;
+  font-size: 0.9rem;
+  color: var(--text);
+  line-height: 1.6;
+}
+
+/* ---- Chain of accountability (/adversarial) ---- */
+
+.chain {
+  display: grid;
+  grid-template-columns: 1fr 24px 1fr 24px 1fr;
+  gap: 12px;
+  align-items: stretch;
+}
+.chain-col {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+}
+.chain-step {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  margin-bottom: 8px;
+  font-weight: 700;
+}
+.chain-col p {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.chain-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  color: var(--text-muted);
+}
+
+/* ---- Gates (/adversarial) ---- */
+
+.gates-subhead {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 24px 0 12px;
+}
+.gate-cards {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+.gate-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 20px;
+}
+.gate-card.mandatory {
+  border-left: 3px solid var(--accent);
+}
+.gate-card.info {
+  border-left: 3px solid var(--text-muted);
+}
+.gate-id {
+  font-family: var(--mono);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 2px;
+}
+.gate-card.info .gate-id {
+  color: var(--text-muted);
+}
+.gate-name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.gate-card p {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* ---- Falsifiers (/adversarial) ---- */
+
+.falsifier-cards {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+.falsifier-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--red);
+  border-radius: 8px;
+  padding: 16px 20px;
+}
+.falsifier-card h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.falsifier-card p {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.falsifier-card ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+.falsifier-card ul li {
+  margin-bottom: 4px;
+}
+
+/* ---- Footnote ---- */
+
+.footnote {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+/* ---- Scenario cards (/adversarial) ---- */
+
+.scenario-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.scenario-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+}
+.scenario-card.control {
+  border-left: 3px solid var(--text-muted);
+  padding: 20px 24px;
+}
+.scenario-card h3 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.scenario-desc {
+  font-size: 0.9rem;
+  color: var(--text);
+  line-height: 1.6;
+  margin-bottom: 16px;
+}
+.scenario-card.control .scenario-desc {
+  color: var(--text-muted);
+  margin-bottom: 0;
+}
+.scenario-meta {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 6px 16px;
+  font-size: 0.85rem;
+}
+.scenario-meta dt {
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.7rem;
+  padding-top: 4px;
+}
+.scenario-meta dd {
+  color: var(--text);
+  margin: 0;
+  line-height: 1.5;
+}
+.scenario-meta dd a {
+  color: var(--accent);
+}
+.controls-heading {
+  margin-top: 48px;
+}
+.gate-pill {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-right: 4px;
+}
+.gate-pill.mandatory {
+  background: rgb(244 183 40 / 0.15);
+  color: var(--accent);
+  border: 1px solid rgb(244 183 40 / 0.3);
+}
+.gate-pill.info {
+  background: rgb(107 115 148 / 0.15);
+  color: var(--text-muted);
+  border: 1px solid rgb(107 115 148 / 0.3);
+}
+
 /* ---- Responsive ---- */
 
 @media (max-width: 640px) {
+  #hero {
+    padding: 48px 0 32px;
+  }
   #hero h1 {
-    font-size: 1.3rem;
+    font-size: 1.4rem;
+  }
+  .hero-lead {
+    font-size: 0.95rem;
+  }
+  #page-hero h1 {
+    font-size: 1.4rem;
   }
   .fee-cards {
     flex-direction: column;
@@ -459,7 +1283,73 @@ footer {
   .card-value {
     font-size: 1.8rem;
   }
-  nav {
-    gap: 16px;
+
+  /* Mobile nav: hamburger button + JS-toggled dropdown */
+  .nav-toggle {
+    display: flex;
+  }
+  header nav {
+    display: none;
+    flex-direction: column;
+    gap: 4px;
+    position: absolute;
+    right: 24px;
+    top: 56px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px;
+    min-width: 180px;
+    z-index: 10;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.4);
+  }
+  header nav.open {
+    display: flex;
+  }
+  header nav a {
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 0.95rem;
+  }
+  header nav a:hover {
+    background: var(--bg-surface);
+  }
+  header nav a.active {
+    background: var(--bg-surface);
+    color: var(--accent);
+  }
+  header nav a.active::after {
+    display: none;
+  }
+
+  .portal-cards,
+  .principle-cards,
+  .gate-cards,
+  .falsifier-cards,
+  .privacy-cards {
+    grid-template-columns: 1fr;
+  }
+  .chain {
+    grid-template-columns: 1fr;
+  }
+  .chain-arrow {
+    transform: rotate(90deg);
+    height: 24px;
+  }
+  .scenario-meta {
+    grid-template-columns: 1fr;
+    gap: 2px 0;
+  }
+  .scenario-meta dt {
+    margin-top: 8px;
+  }
+
+  /* Flow diagram stacks vertically on mobile */
+  .flow-diagram {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 16px auto 16px auto 16px auto;
+  }
+  .flow-arrow {
+    transform: rotate(90deg);
   }
 }

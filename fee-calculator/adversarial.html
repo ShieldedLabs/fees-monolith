@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>What Could Break This &middot; Zcash Dynamic Fees</title>
+  <meta name="description" content="Adversarial scenarios, falsifiers, and acceptance gates for the Zcash dynamic fee mechanism. Phase 2 earthquake tests.">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header>
+  <div class="container">
+    <a href="/" class="logo">
+      <img src="/shield.png" alt="" width="32" height="32">
+      <span>Dynamic Fees</span>
+    </a>
+    <button class="nav-toggle" aria-label="Menu" aria-expanded="false" aria-controls="site-nav">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <line x1="4" y1="6" x2="20" y2="6"/>
+        <line x1="4" y1="12" x2="20" y2="12"/>
+        <line x1="4" y1="18" x2="20" y2="18"/>
+      </svg>
+    </button>
+    <nav id="site-nav">
+      <a href="/design">Design</a>
+      <a href="/adversarial" class="active">Adversarial</a>
+      <a href="/interactions">Interactions</a>
+      <a href="https://github.com/ShieldedLabs/fee-playground" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<!-- ======== PAGE HERO ======== -->
+<section id="page-hero">
+  <div class="container">
+    <span class="page-eyebrow">Phase 2 &middot; Earthquake Tests &middot; May&ndash;August 2026</span>
+    <h1>What could break this</h1>
+    <p class="page-lead">
+      Every dynamic fee mechanism makes claims about behavior. Without falsifiable tests, those
+      claims are aesthetic. Phase 2 is where claims meet scenarios that could kill them. This page
+      lists the scenarios under simulation, the conditions that would invalidate the design, and
+      the gates the mechanism must pass before consensus enforcement.
+    </p>
+  </div>
+</section>
+
+<!-- ======== CHAIN OF ACCOUNTABILITY ======== -->
+<section id="chain">
+  <div class="container">
+    <h2>The chain of accountability</h2>
+    <p class="section-lead">
+      Each scenario in the simulator is doing concrete work. Nothing here is decoration.
+    </p>
+    <div class="chain">
+      <div class="chain-col">
+        <div class="chain-step">Probe</div>
+        <p>A scenario the simulator runs &mdash; an attacker pattern, a controller comparison, a stress condition.</p>
+      </div>
+      <div class="chain-arrow" aria-hidden="true">&rarr;</div>
+      <div class="chain-col">
+        <div class="chain-step">Kill condition</div>
+        <p>A falsifier &mdash; a behavioral pattern that would invalidate a design claim.</p>
+      </div>
+      <div class="chain-arrow" aria-hidden="true">&rarr;</div>
+      <div class="chain-col">
+        <div class="chain-step">Acceptance criterion</div>
+        <p>A gate the mechanism must pass before Phase 3 consensus work begins.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======== GATES ======== -->
+<section id="gates">
+  <div class="container">
+    <h2>The gates</h2>
+    <p class="section-lead">
+      From the <a href="https://shieldedlabs.net/dynamic-fees-roadmap/" target="_blank" rel="noopener">Shielded Labs roadmap</a>,
+      derived from the <a href="/research/nikete-audit-2026.pdf" target="_blank" rel="noopener">nikete audit</a>'s experiment specifications.
+    </p>
+
+    <h3 class="gates-subhead">Must pass</h3>
+    <div class="gate-cards">
+      <div class="gate-card mandatory">
+        <div class="gate-id">E2</div>
+        <div class="gate-name">Shock response</div>
+        <p>Does the estimator recover from congestion spikes within a reasonable horizon?</p>
+      </div>
+      <div class="gate-card mandatory">
+        <div class="gate-id">E3</div>
+        <div class="gate-name">Tier effectiveness</div>
+        <p>Do higher fee tiers actually provide better service?</p>
+      </div>
+      <div class="gate-card mandatory">
+        <div class="gate-id">E4</div>
+        <div class="gate-name">Manipulation bounds</div>
+        <p>Is the cost to push the recommended fee by one bucket prohibitively expensive?</p>
+      </div>
+      <div class="gate-card mandatory">
+        <div class="gate-id">E7</div>
+        <div class="gate-name">Privacy accounting</div>
+        <p>Does the mechanism maintain its fee-entropy advantage over continuous bidding?</p>
+      </div>
+    </div>
+
+    <h3 class="gates-subhead">Informational</h3>
+    <div class="gate-cards">
+      <div class="gate-card info">
+        <div class="gate-id">E5</div>
+        <div class="gate-name">Transition stability</div>
+        <p>Does the estimator avoid oscillating between buckets during normal operation?</p>
+      </div>
+      <div class="gate-card info">
+        <div class="gate-id">E6</div>
+        <div class="gate-name">Synthetic model choice</div>
+        <p>Does changing the resource basis improve delay prediction without degrading privacy?</p>
+      </div>
+    </div>
+    <p class="footnote">
+      Informational gates inform design decisions but do not block deployment.
+    </p>
+  </div>
+</section>
+
+<!-- ======== FALSIFIERS ======== -->
+<section id="falsifiers">
+  <div class="container">
+    <h2>The falsifiers</h2>
+    <p class="section-lead">
+      Conditions that would invalidate specific design claims at runtime. If any of these triggers
+      on real data, that claim must be downgraded or the design changed.
+    </p>
+    <div class="falsifier-cards">
+      <div class="falsifier-card">
+        <h3>Priority-tier falsifier</h3>
+        <p>Higher tiers don't deliver monotone inclusion gains under load.</p>
+      </div>
+      <div class="falsifier-card">
+        <h3>Stability falsifier</h3>
+        <p>Bucket-switch frequency remains high outside shock windows.</p>
+      </div>
+      <div class="falsifier-card">
+        <h3>Learning falsifier</h3>
+        <p>Observed bidding behavior is better explained by unstable myopic responses than by no-regret learning dynamics.</p>
+      </div>
+      <div class="falsifier-card">
+        <h3>Privacy falsifier</h3>
+        <ul>
+          <li>Discontinuous bucket flips can create timing signals.</li>
+          <li>Fast-lane / binary segmentation leaks urgency or wealth and undermines low-entropy goals.</li>
+          <li>Divergent wallet implementations become a fingerprint.</li>
+        </ul>
+      </div>
+    </div>
+    <p class="footnote">
+      The full <a href="/research/nikete-audit-2026.pdf" target="_blank" rel="noopener">audit</a> defines five falsifiers, F1&ndash;F5.
+      Two were promoted to gate-level acceptance criteria: F1 (anti-spam) is implicitly covered by
+      E2's shock-recovery requirement plus the floor logic in Layer 3; F5 (manipulation cost) became
+      gate E4 directly. The four falsifiers above are the runtime-behavioral conditions.
+    </p>
+  </div>
+</section>
+
+<!-- ======== SCENARIOS ======== -->
+<section id="scenarios">
+  <div class="container">
+    <h2>The scenarios</h2>
+    <p class="section-lead">
+      Six adversarial probes target specific failure modes. Each card lists the gate(s) the scenario
+      stresses, the falsifier(s) it could trigger, and what failure would look like.
+    </p>
+
+    <div class="scenario-cards">
+      <article class="scenario-card">
+        <h3>Burst spam</h3>
+        <p class="scenario-desc">
+          An attacker floods blocks with high-fee transactions for a short window, pushing the
+          lookback median up. Tests whether the estimator returns to baseline once the burst ends
+          and whether the cost to mount the burst is prohibitive.
+        </p>
+        <dl class="scenario-meta">
+          <dt>Tests</dt>
+          <dd><span class="gate-pill mandatory">E2</span> <span class="gate-pill mandatory">E4</span> <span class="gate-pill info">E5</span></dd>
+          <dt>Could trigger</dt>
+          <dd>Stability falsifier &mdash; if recovery is slow.</dd>
+          <dt>Failure mode</dt>
+          <dd>Estimator stays elevated for many blocks after the burst ends, or attack cost is small.</dd>
+        </dl>
+      </article>
+
+      <article class="scenario-card">
+        <h3>Median poisoning</h3>
+        <p class="scenario-desc">
+          Sustained elevated-fee transactions over the lookback window, designed to shift the median
+          upward without triggering congestion detection.
+        </p>
+        <dl class="scenario-meta">
+          <dt>Tests</dt>
+          <dd><span class="gate-pill mandatory">E4</span> <span class="gate-pill info">E5</span></dd>
+          <dt>Could trigger</dt>
+          <dd>Stability falsifier.</dd>
+          <dt>Failure mode</dt>
+          <dd>The shifted median persists at the new level after the attack stops, or per-bucket cost is small.</dd>
+        </dl>
+      </article>
+
+      <article class="scenario-card">
+        <h3>Bucket-boundary nudging</h3>
+        <p class="scenario-desc">
+          Small fee adjustments near the powers-of-10 quantization threshold, designed to flip the
+          bucket cheaply. A direct attack on the bucketing mechanism itself.
+        </p>
+        <dl class="scenario-meta">
+          <dt>Tests</dt>
+          <dd><span class="gate-pill mandatory">E4</span> <span class="gate-pill info">E5</span></dd>
+          <dt>Could trigger</dt>
+          <dd>Stability falsifier &middot; Privacy falsifier (timing signals from bucket flips).</dd>
+          <dt>Failure mode</dt>
+          <dd>Bucket flips are cheap to induce, creating frequent 10&times; discontinuities and observable timing patterns.</dd>
+        </dl>
+      </article>
+
+      <article class="scenario-card">
+        <h3>Fast-lane flap</h3>
+        <p class="scenario-desc">
+          Synthetic demand displacement designed to oscillate the congestion signal, triggering the
+          Priority tier on and off. Hits the underspecified fast-lane semantics that the audit flagged.
+        </p>
+        <dl class="scenario-meta">
+          <dt>Tests</dt>
+          <dd><span class="gate-pill mandatory">E3</span> <span class="gate-pill info">E5</span></dd>
+          <dt>Could trigger</dt>
+          <dd>Priority-tier falsifier &middot; Privacy falsifier (binary segmentation leaks urgency).</dd>
+          <dt>Failure mode</dt>
+          <dd>Priority tier provides no monotone inclusion gain, or its on/off signal leaks user-side urgency.</dd>
+        </dl>
+      </article>
+
+      <article class="scenario-card">
+        <h3>Miner self-dealing</h3>
+        <p class="scenario-desc">
+          A miner includes their own transactions priced to push the median up, then pockets most of
+          the cost back as block reward. If the cheap-to-manipulate radius is large, miners can move
+          the recommended fee for free.
+        </p>
+        <dl class="scenario-meta">
+          <dt>Tests</dt>
+          <dd><span class="gate-pill mandatory">E4</span></dd>
+          <dt>Could trigger</dt>
+          <dd>Stability falsifier.</dd>
+          <dt>Failure mode</dt>
+          <dd>Manipulation cost net of self-recovery falls below an acceptable threshold.</dd>
+          <dt>Literature</dt>
+          <dd>
+            <a href="/research/bao-undercutting-2024.pdf" target="_blank" rel="noopener">Bao 2024</a>
+            studies the closely related family of <em>undercutting attacks</em>. Two parameters from
+            her thesis &mdash; normalized block-size limit and fee-gradient sparsity &mdash; become tunable
+            knobs in this scenario.
+          </dd>
+        </dl>
+      </article>
+
+      <article class="scenario-card">
+        <h3>Sybil split</h3>
+        <p class="scenario-desc">
+          An attacker splits one transaction into many small ones to exploit oracles weighted by
+          transaction count rather than action count. Also stresses divergent wallet implementations
+          as a fingerprint surface.
+        </p>
+        <dl class="scenario-meta">
+          <dt>Tests</dt>
+          <dd><span class="gate-pill mandatory">E4</span> <span class="gate-pill mandatory">E7</span></dd>
+          <dt>Could trigger</dt>
+          <dd>Privacy falsifier (wallet-implementation divergence).</dd>
+          <dt>Failure mode</dt>
+          <dd>Tx-weighted oracles produce different recommendations than action-weighted ones, becoming a wallet fingerprint.</dd>
+        </dl>
+      </article>
+    </div>
+
+    <h2 class="controls-heading">Controls and comparisons</h2>
+    <p class="section-lead">
+      Three additional scenarios are not adversarial &mdash; they isolate assumptions or compare
+      controllers. They are listed separately so they don't blur into the attacks.
+    </p>
+
+    <div class="scenario-cards">
+      <article class="scenario-card control">
+        <h3>Floor-fee saturation</h3>
+        <p class="scenario-desc">
+          Sustained low-volume transactions priced at the floor, no congestion. Tests the audit's
+          claim that anti-spam resilience is dominated by the fee floor itself &mdash; that the floor
+          is a security parameter, not a tuning knob.
+        </p>
+      </article>
+
+      <article class="scenario-card control">
+        <h3>AIMD comparison</h3>
+        <p class="scenario-desc">
+          Compares the comparable-median controller against an Additive-Increase Multiplicative-Decrease
+          variant. Feeds extended research gate E12 (controller benchmark).
+        </p>
+      </article>
+
+      <article class="scenario-card control">
+        <h3>Hysteresis comparison</h3>
+        <p class="scenario-desc">
+          Compares controllers with and without hysteresis on bucket flips. Informs E5 transition
+          stability and feeds E12.
+        </p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ======== ABOUT ======== -->
+<section id="about-sim">
+  <div class="container">
+    <h2>About the simulator</h2>
+    <p>
+      The adversarial scenario suite is being developed by external collaborator
+      <a href="https://github.com/mnm458/zcash-dyanmic-fee-sim" target="_blank" rel="noopener">Mohak Nahta</a>.
+      Findings from specific runs will be published separately. The framework &mdash; the scenarios,
+      controllers, oracles, and the harm-ratio metric &mdash; is open source:
+      <a href="https://github.com/mnm458/zcash-dyanmic-fee-sim" target="_blank" rel="noopener">github.com/mnm458/zcash-dyanmic-fee-sim</a>.
+    </p>
+    <p>
+      The mechanism design audit is by
+      <a href="/research/nikete-audit-2026.pdf" target="_blank" rel="noopener">Nicolás "nikete" Della Penna</a>.
+      The MinerSelfDealing scenario draws on
+      <a href="/research/bao-undercutting-2024.pdf" target="_blank" rel="noopener">Claire Bao's 2024 MIT thesis</a>
+      on undercutting attacks.
+    </p>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <p>
+      Built by <a href="https://shieldedlabs.net" target="_blank" rel="noopener">Shielded Labs</a>.
+      Source on <a href="https://github.com/ShieldedLabs/fee-playground" target="_blank" rel="noopener">GitHub</a>.
+    </p>
+  </div>
+</footer>
+
+<script src="/app.js"></script>
+</body>
+</html>

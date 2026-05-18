@@ -1,0 +1,267 @@
+/**
+ * Zcash Dynamic Fees — frontend polling and rendering.
+ *
+ * Fetches /api/fees every 10 seconds and updates the page.
+ */
+
+const POLL_INTERVAL = 10_000;
+const ZATS_PER_ZEC = 100_000_000;
+
+let priceUsd = 0;
+
+// ---- Polling ----
+
+async function fetchFees() {
+  try {
+    const res = await fetch("/api/fees", { cache: "no-cache" });
+    if (!res.ok) throw new Error(res.statusText);
+    const data = await res.json();
+    renderHero(data);
+    renderResponse(data);
+  } catch {
+    const text = document.getElementById("status-text");
+    const dot = document.getElementById("status-dot");
+    if (text) text.textContent = "Connection error";
+    if (dot) dot.className = "status-dot red";
+  }
+}
+
+async function fetchPrice() {
+  try {
+    const res = await fetch("/api/price", { cache: "no-cache" });
+    if (!res.ok) return;
+    const data = await res.json();
+    priceUsd = data.usd_per_zec || 0;
+  } catch {
+    // non-critical
+  }
+}
+
+// ---- Rendering ----
+
+function renderHero(data) {
+  const std = data.standard_fee;
+  // New RPC contract (post-rename): priority_fee always present, congested flag separate.
+  // Backward-compat: old contract used express_fee (Option<u64>, present only when congested).
+  const priority = data.priority_fee ?? data.express_fee ?? (Number(std) * 10);
+  const congested = data.congested ?? (data.express_fee != null && data.express_fee > 0);
+
+  const standardFee = document.getElementById("standard-fee");
+  if (!standardFee) return; // not on the portal page; nothing to render
+
+  standardFee.textContent = Number(std).toLocaleString();
+  document.getElementById("standard-usd").textContent = formatUsd(std);
+
+  const priorityFee = document.getElementById("priority-fee");
+  const priorityUsd = document.getElementById("priority-usd");
+  if (priorityFee) priorityFee.textContent = Number(priority).toLocaleString();
+  if (priorityUsd) priorityUsd.textContent = formatUsd(priority);
+
+  // Status bar — informational. Card display is the same regardless.
+  const dot = document.getElementById("status-dot");
+  const text = document.getElementById("status-text");
+  if (dot) dot.className = congested ? "status-dot red" : "status-dot green";
+  if (text) text.textContent = congested ? "Network congested" : "Network uncongested";
+
+  const blockHeight = document.getElementById("block-height");
+  const estimatorVersion = document.getElementById("estimator-version");
+  if (blockHeight) blockHeight.textContent = Number(data.height).toLocaleString();
+  if (estimatorVersion) estimatorVersion.textContent = data.version || "--";
+}
+
+function renderResponse(data) {
+  const el = document.getElementById("live-response");
+  if (!el) return;
+  el.textContent = JSON.stringify(data, null, 2);
+}
+
+function formatUsd(zats) {
+  if (!priceUsd || !zats) return "";
+  const usd = (zats / ZATS_PER_ZEC) * priceUsd;
+  if (usd < 0.01) return `$${usd.toFixed(6)}`;
+  return `$${usd.toFixed(4)}`;
+}
+
+// ---- Tabs ----
+
+function initTabs() {
+  document.querySelectorAll(".tab").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
+      document.querySelectorAll(".tab-content").forEach((c) => c.classList.remove("active"));
+      btn.classList.add("active");
+      const target = document.getElementById("tab-" + btn.dataset.tab);
+      if (target) target.classList.add("active");
+    });
+  });
+}
+
+// ---- Copy ----
+
+function initCopy() {
+  document.querySelectorAll(".copy-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const el = document.getElementById(btn.dataset.target);
+      if (!el) return;
+      navigator.clipboard.writeText(el.textContent).then(() => {
+        const orig = btn.textContent;
+        btn.textContent = "Copied";
+        setTimeout(() => { btn.textContent = orig; }, 1500);
+      });
+    });
+  });
+}
+
+// ---- History chart ----
+
+let _chartInstance = null;
+const HISTORY_POLL_MS = 60_000;
+
+async function renderChart() {
+  const canvas = document.getElementById("fee-history-chart");
+  const empty = document.getElementById("chart-empty");
+  if (!canvas || typeof Chart === "undefined") return;
+  let entries = [];
+  try {
+    const res = await fetch("/api/history?limit=1500", { cache: "no-cache" });
+    if (res.ok) {
+      const data = await res.json();
+      entries = data.entries || [];
+    }
+  } catch {
+    // ignore — chart stays empty
+  }
+
+  if (entries.length < 2) {
+    canvas.style.display = "none";
+    if (empty) empty.style.display = "block";
+    return;
+  }
+  canvas.style.display = "block";
+  if (empty) empty.style.display = "none";
+
+  const labels = entries.map((e) => new Date(e.ts));
+  const standardData = entries.map((e) => e.standard_fee);
+  const priorityData = entries.map((e) => e.priority_fee);
+  const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const accent = cssVar("--accent") || "#f4b728";
+  const muted = cssVar("--text-muted") || "#6b7394";
+  const border = cssVar("--border") || "#1e2a45";
+
+  if (_chartInstance) {
+    _chartInstance.data.labels = labels;
+    _chartInstance.data.datasets[0].data = standardData;
+    _chartInstance.data.datasets[1].data = priorityData;
+    _chartInstance.update("none");
+    return;
+  }
+
+  _chartInstance = new Chart(canvas, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "Standard",
+          data: standardData,
+          borderColor: accent,
+          backgroundColor: "transparent",
+          borderWidth: 2,
+          pointRadius: 0,
+          tension: 0.2,
+        },
+        {
+          label: "Priority",
+          data: priorityData,
+          borderColor: muted,
+          backgroundColor: "transparent",
+          borderWidth: 1.5,
+          borderDash: [4, 4],
+          pointRadius: 0,
+          tension: 0.2,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      scales: {
+        x: {
+          type: "time",
+          time: { unit: "hour", displayFormats: { hour: "HH:mm" } },
+          grid: { color: border },
+          ticks: { color: muted, font: { size: 11 } },
+        },
+        y: {
+          type: "logarithmic",
+          grid: { color: border },
+          ticks: {
+            color: muted,
+            font: { size: 11 },
+            callback: (v) => Number(v).toLocaleString(),
+          },
+          title: { display: true, text: "zats per action", color: muted, font: { size: 11 } },
+        },
+      },
+      plugins: {
+        legend: {
+          position: "top",
+          align: "end",
+          labels: { color: muted, boxWidth: 12, font: { size: 12 } },
+        },
+        tooltip: {
+          backgroundColor: "rgba(19, 26, 43, 0.95)",
+          borderColor: border,
+          borderWidth: 1,
+          titleColor: "#e0e4ef",
+          bodyColor: "#e0e4ef",
+          callbacks: {
+            label: (ctx) => `${ctx.dataset.label}: ${Number(ctx.parsed.y).toLocaleString()} zats`,
+          },
+        },
+      },
+    },
+  });
+}
+
+// ---- Mobile nav toggle ----
+
+function initNavToggle() {
+  const btn = document.querySelector(".nav-toggle");
+  const nav = document.querySelector("header nav");
+  if (!btn || !nav) return;
+  btn.addEventListener("click", () => {
+    const open = nav.classList.toggle("open");
+    btn.setAttribute("aria-expanded", String(open));
+  });
+  document.addEventListener("click", (e) => {
+    if (!nav.classList.contains("open")) return;
+    const path = e.composedPath();
+    if (path.includes(btn) || path.includes(nav)) return;
+    nav.classList.remove("open");
+    btn.setAttribute("aria-expanded", "false");
+  });
+}
+
+// ---- Init ----
+
+initTabs();
+initCopy();
+initNavToggle();
+
+// Polling only runs if the page has live data targets (portal hero or design RPC response).
+const needsLiveData =
+  document.getElementById("standard-fee") || document.getElementById("live-response");
+
+if (needsLiveData) {
+  fetchPrice();
+  fetchFees();
+  setInterval(fetchFees, POLL_INTERVAL);
+  setInterval(fetchPrice, 300_000); // refresh price every 5 min
+}
+
+if (document.getElementById("fee-history-chart")) {
+  renderChart();
+  setInterval(renderChart, HISTORY_POLL_MS);
+}
