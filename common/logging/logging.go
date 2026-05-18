@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
-	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/peer"
 )
@@ -19,17 +18,17 @@ func LoggingInterceptor() grpc.ServerOption {
 func loggerFromContext(ctx context.Context) *logrus.Entry {
 	// TODO: anonymize the addresses. cryptopan?
 	if peerInfo, ok := peer.FromContext(ctx); ok {
-		return log.WithFields(logrus.Fields{"peer_addr": peerInfo.Addr})
+		return logrus.WithFields(logrus.Fields{"peer_addr": peerInfo.Addr})
 	}
-	return log.WithFields(logrus.Fields{"peer_addr": "unknown"})
+	return logrus.WithFields(logrus.Fields{"peer_addr": "unknown"})
 }
 
 func LogInterceptor(
 	ctx context.Context,
-	req interface{},
+	req any,
 	info *grpc.UnaryServerInfo,
 	handler grpc.UnaryHandler,
-) (interface{}, error) {
+) (any, error) {
 	reqLog := loggerFromContext(ctx)
 	start := time.Now()
 

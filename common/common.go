@@ -5,17 +5,22 @@
 package common
 
 import (
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
+	"github.com/zcash/lightwalletd/hash32"
 	"github.com/zcash/lightwalletd/parser"
 	"github.com/zcash/lightwalletd/walletrpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // 'make build' will overwrite this string with the output of git-describe (tag)
@@ -77,6 +82,7 @@ type (
 	// zcashd rpc "getblockchaininfo"
 	Upgradeinfo struct {
 		// unneeded fields can be omitted
+		Name             string
 		ActivationHeight int
 		Status           string // "active"
 	}
@@ -94,6 +100,7 @@ type (
 	}
 
 	// zcashd rpc "getinfo"
+	// Note, this rpc should not be depended on in the future (being deprecated).
 	ZcashdRpcReplyGetinfo struct {
 		Build      string
 		Subversion string
@@ -276,6 +283,15 @@ func GetLightdInfo() (*walletrpc.LightdInfo, error) {
 		saplingHeight = saplingJSON.ActivationHeight
 	}
 
+	// Find the name and activation height of the next pending network upgrade,
+	// or "" and 0 if there is no pending upgrade.
+	var upgrade Upgradeinfo
+	for _, u := range getblockchaininfoReply.Upgrades {
+		if u.Status == "pending" && (upgrade.Status == "" || u.ActivationHeight < upgrade.ActivationHeight) {
+			upgrade = u
+		}
+	}
+
 	vendor := "ECC LightWalletD"
 	if DarksideEnabled {
 		vendor = "ECC DarksideWalletD"
@@ -296,6 +312,8 @@ func GetLightdInfo() (*walletrpc.LightdInfo, error) {
 		ZcashdBuild:             getinfoReply.Build,
 		ZcashdSubversion:        getinfoReply.Subversion,
 		DonationAddress:         DonationAddress,
+		UpgradeName:             upgrade.Name,
+		UpgradeHeight:           uint64(upgrade.ActivationHeight),
 	}, nil
 }
 
@@ -313,15 +331,13 @@ func getBlockFromRPC(height int) (*walletrpc.CompactBlock, error) {
 	if err != nil {
 		Log.Fatal("getBlockFromRPC bad height argument", height, err)
 	}
-	params := make([]json.RawMessage, 2)
-	params[0] = heightJSON
 	// Fetch the block using the verbose option ("1") because it provides
 	// both the list of txids, which we're not yet able to compute for
 	// Orchard (V5) transactions, and the block hash (block ID), which
 	// we need to fetch the raw data format of the same block. Don't fetch
 	// by height in case a reorg occurs between the two getblock calls;
 	// using block hash ensures that we're fetching the same block.
-	params[1] = json.RawMessage("1")
+	params := []json.RawMessage{heightJSON, json.RawMessage("1")}
 	result, rpcErr := RawRequest("getblock", params)
 	if rpcErr != nil {
 		// Check to see if we are requesting a height the zcashd doesn't have yet
@@ -333,14 +349,14 @@ func getBlockFromRPC(height int) (*walletrpc.CompactBlock, error) {
 	var block1 ZcashRpcReplyGetblock1
 	err = json.Unmarshal(result, &block1)
 	if err != nil {
-		return nil, err
+		Log.Fatal("getBlockFromRPC: Can't unmarshal block:", err)
 	}
 	blockHash, err := json.Marshal(block1.Hash)
 	if err != nil {
 		Log.Fatal("getBlockFromRPC bad block hash", block1.Hash)
 	}
-	params[0] = blockHash
-	params[1] = json.RawMessage("0") // non-verbose (raw hex)
+	// non-verbose (raw hex) version of block
+	params = []json.RawMessage{blockHash, json.RawMessage("0")}
 	result, rpcErr = RawRequest("getblock", params)
 
 	// For some reason, the error responses are not JSON
@@ -371,12 +387,12 @@ func getBlockFromRPC(height int) (*walletrpc.CompactBlock, error) {
 		return nil, errors.New("received unexpected height block")
 	}
 	for i, t := range block.Transactions() {
-		txid, err := hex.DecodeString(block1.Tx[i])
+		txidBigEndian, err := hash32.Decode(block1.Tx[i])
 		if err != nil {
 			return nil, fmt.Errorf("error decoding getblock txid: %w", err)
 		}
 		// convert from big-endian
-		t.SetTxID(parser.Reverse(txid))
+		t.SetTxID(hash32.Reverse(txidBigEndian))
 	}
 	r := block.ToCompact()
 	r.ChainMetadata.SaplingCommitmentTreeSize = block1.Trees.Sapling.Size
@@ -428,13 +444,13 @@ func BlockIngestor(c *BlockCache, rep int) {
 		if err != nil {
 			Log.Fatal("bad getbestblockhash return:", err, result)
 		}
-		lastBestBlockHash, err := hex.DecodeString(hashHex)
+		lastBestBlockHashBE, err := hash32.Decode(hashHex)
 		if err != nil {
 			Log.Fatal("error decoding getbestblockhash", err, hashHex)
 		}
 
 		height := c.GetNextHeight()
-		if string(lastBestBlockHash) == string(parser.Reverse(c.GetLatestHash())) {
+		if lastBestBlockHashBE == hash32.Reverse(c.GetLatestHash()) {
 			// Synced
 			c.Sync()
 			if lastHeightLogged != height-1 {
@@ -452,14 +468,14 @@ func BlockIngestor(c *BlockCache, rep int) {
 			Time.Sleep(8 * time.Second)
 			continue
 		}
-		if block != nil && c.HashMatch(block.PrevHash) {
+		if block != nil && c.HashMatch(hash32.FromSlice(block.PrevHash)) {
 			if err = c.Add(height, block); err != nil {
 				Log.Fatal("Cache add failed:", err)
 			}
 			// Don't log these too often.
 			if DarksideEnabled || Time.Now().Sub(lastLog).Seconds() >= 4 {
 				lastLog = Time.Now()
-				Log.Info("Adding block to cache ", height, " ", displayHash(block.Hash))
+				Log.Info("Adding block to cache ", height, " ", displayHash(hash32.FromSlice(block.Hash)))
 			}
 			continue
 		}
@@ -478,6 +494,7 @@ func BlockIngestor(c *BlockCache, rep int) {
 // GetBlock returns the compact block at the requested height, first by querying
 // the cache, then, if not found, will request the block from zcashd. It returns
 // nil if no block exists at this height.
+// This returns gRPC-compatible errors.
 func GetBlock(cache *BlockCache, height int) (*walletrpc.CompactBlock, error) {
 	// First, check the cache to see if we have the block
 	var block *walletrpc.CompactBlock
@@ -491,38 +508,118 @@ func GetBlock(cache *BlockCache, height int) (*walletrpc.CompactBlock, error) {
 	// Not in the cache
 	block, err := getBlockFromRPC(height)
 	if err != nil {
-		return nil, err
+		return nil, status.Errorf(codes.InvalidArgument,
+			"GetBlock: getblock failed, error: %s", err.Error())
 	}
 	if block == nil {
 		// Block height is too large
-		return nil, errors.New("block requested is newer than latest block")
+		return nil, status.Errorf(codes.OutOfRange,
+			"GetBlock: block %d is newer than the latest block", height)
 	}
 	return block, nil
 }
 
+// FilterTxPool returns a new transaction that is a subset of the argument tx
+// (which is not modified), with only those parts that are requested by the
+// pool type argument. Returns nil if the tx ends up with no components.
+func FilterTxPool(tx *walletrpc.CompactTx, poolTypes []walletrpc.PoolType) *walletrpc.CompactTx {
+	// We can't struct-copy the argument compact tx because it contains
+	// a lock field that isn't allowed to be copied.
+	r := &walletrpc.CompactTx{
+		Index: tx.Index,
+		Txid:  tx.Txid,
+		Fee:   tx.Fee,
+	}
+	if slices.Contains(poolTypes, walletrpc.PoolType_TRANSPARENT) {
+		r.Vin, r.Vout = tx.Vin, tx.Vout
+	}
+	if slices.Contains(poolTypes, walletrpc.PoolType_SAPLING) {
+		r.Spends, r.Outputs = tx.Spends, tx.Outputs
+	}
+	if slices.Contains(poolTypes, walletrpc.PoolType_ORCHARD) {
+		r.Actions = tx.Actions
+	}
+	if len(r.Vin) > 0 ||
+		len(r.Vout) > 0 ||
+		len(r.Spends) > 0 ||
+		len(r.Outputs) > 0 ||
+		len(r.Actions) > 0 {
+		return r
+	}
+	return nil
+}
+
+// filterBlockPool takes a slice of transactions and a filter (BlockRange PoolType),
+// removes the transaction components that are not present in the filter, and
+// returns subset of the transactions that have one or more components (that is,
+// don't bother to return empty transactions).
+func filterBlockPool(vtx []*walletrpc.CompactTx, poolTypes []walletrpc.PoolType) []*walletrpc.CompactTx {
+	if len(poolTypes) == 0 {
+		// legacy behavior: return only blocks containing shielded components.
+		poolTypes = []walletrpc.PoolType{
+			walletrpc.PoolType_SAPLING,
+			walletrpc.PoolType_ORCHARD,
+		}
+	}
+	trimmedVtx := []*walletrpc.CompactTx{}
+	for _, tx := range vtx {
+		if ftx := FilterTxPool(tx, poolTypes); ftx != nil {
+			trimmedVtx = append(trimmedVtx, ftx)
+		}
+	}
+	return trimmedVtx
+}
+
 // GetBlockRange returns a sequence of consecutive blocks in the given range.
-func GetBlockRange(cache *BlockCache, blockOut chan<- *walletrpc.CompactBlock, errOut chan<- error, start, end int) {
+//
+// The `ctx` parameter is used to abort iteration when the gRPC client cancels
+// the stream. Without it, the producer goroutine would block indefinitely on
+// the unbuffered `blockOut` send after the consumer (the gRPC handler) returns,
+// leaking one goroutine per cancelled stream.
+func GetBlockRange(ctx context.Context, cache *BlockCache, blockOut chan<- *walletrpc.CompactBlock, errOut chan<- error, span *walletrpc.BlockRange) {
+	if slices.Contains(span.PoolTypes, walletrpc.PoolType_POOL_TYPE_INVALID) {
+		select {
+		case errOut <- fmt.Errorf("GetBlockRange: invalid pool type requested"):
+		case <-ctx.Done():
+		}
+		return
+	}
 	// Go over [start, end] inclusive
-	low := start
-	high := end
-	if start > end {
+	low := int(span.Start.Height)
+	high := int(span.End.Height)
+	if low > high {
 		// reverse the order
-		low, high = end, start
+		low, high = high, low
 	}
 	for i := low; i <= high; i++ {
 		j := i
-		if start > end {
+		if span.Start.Height > span.End.Height {
 			// reverse the order
 			j = high - (i - low)
 		}
+
 		block, err := GetBlock(cache, j)
 		if err != nil {
-			errOut <- err
+			select {
+			case errOut <- err:
+			case <-ctx.Done():
+			}
 			return
 		}
-		blockOut <- block
+		block.Vtx = filterBlockPool(block.Vtx, span.PoolTypes)
+
+		// Note that we do want to return blocks that have had all of its transactions filtered,
+		// as we have done in the past.
+		select {
+		case blockOut <- block:
+		case <-ctx.Done():
+			return
+		}
 	}
-	errOut <- nil
+	select {
+	case errOut <- nil:
+	case <-ctx.Done():
+	}
 }
 
 // ParseRawTransaction converts between the JSON result of a `zcashd`
@@ -539,29 +636,29 @@ func GetBlockRange(cache *BlockCache, blockOut chan<- *walletrpc.CompactBlock, e
 // the meanings of the `Height` field of the `RawTransaction` type are as
 // follows:
 //
-// * height 0: the transaction is in the mempool
-// * height 0xffffffffffffffff: the transaction has been mined on a fork that
-//   is not currently the main chain
-// * any other height: the transaction has been mined in the main chain at the
-//   given height
+//   - height 0: the transaction is in the mempool
+//   - height 0xffffffffffffffff: the transaction has been mined on a fork that
+//     is not currently the main chain
+//   - any other height: the transaction has been mined in the main chain at the
+//     given height
 func ParseRawTransaction(message json.RawMessage) (*walletrpc.RawTransaction, error) {
-		// Many other fields are returned, but we need only these two.
-		var txinfo ZcashdRpcReplyGetrawtransaction
-		err := json.Unmarshal(message, &txinfo)
-		if err != nil {
-			return nil, err
-		}
-		txBytes, err := hex.DecodeString(txinfo.Hex)
-		if err != nil {
-			return nil, err
-		}
+	// Many other fields are returned, but we need only these two.
+	var txinfo ZcashdRpcReplyGetrawtransaction
+	err := json.Unmarshal(message, &txinfo)
+	if err != nil {
+		return nil, err
+	}
+	txBytes, err := hex.DecodeString(txinfo.Hex)
+	if err != nil {
+		return nil, err
+	}
 
-		return &walletrpc.RawTransaction{
-			Data:   txBytes,
-			Height: uint64(txinfo.Height),
-		}, nil
+	return &walletrpc.RawTransaction{
+		Data:   txBytes,
+		Height: uint64(txinfo.Height),
+	}, nil
 }
 
-func displayHash(hash []byte) string {
-	return hex.EncodeToString(parser.Reverse(hash))
+func displayHash(hash hash32.T) string {
+	return hash32.Encode(hash32.Reverse(hash))
 }
