@@ -8,7 +8,7 @@ test: lint
 lint: lint-html lint-css lint-py
 
 lint-html:
-	npx --yes htmlhint index.html design.html adversarial.html interactions.html
+	npx --yes htmlhint index.html design.html specs.html research.html
 
 lint-css:
 	npx --yes stylelint style.css

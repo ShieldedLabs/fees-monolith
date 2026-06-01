@@ -1,6 +1,6 @@
 # Zcash Dynamic Fees Lab
 
-Public-facing site at [fees.shieldedinfra.net](https://fees.shieldedinfra.net) for the Zcash dynamic fee mechanism: live `z_getstandardfees` endpoint, design rationale, falsifiable test suite, and protocol-stack interactions.
+Public-facing site at [fees.shieldedinfra.net](https://fees.shieldedinfra.net) for the Zcash dynamic fee mechanism: live `z_getstandardfee` endpoint, design rationale, falsifiable test suite, and protocol-stack interactions.
 
 ## Pages
 
@@ -19,7 +19,7 @@ Static research artifacts:
 
 Single Python file (`proxy.py`) using `http.server`. No framework. Two API endpoints:
 
-- `GET /api/fees` — proxies `z_getstandardfees` to a local Zebra node
+- `GET /api/fees` — proxies `z_getstandardfee` to a local Zebra node
 - `GET /api/price` — fetches ZEC/USD from CoinGecko, cached 5 minutes
 
 Static file serving handles clean URLs: `/design` resolves to `design.html` if the bare path doesn't exist.

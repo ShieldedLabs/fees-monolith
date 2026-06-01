@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Specs &middot; Zcash Dynamic Fees</title>
+  <meta name="description" content="The draft ZIPs behind Zcash dynamic fees: the z_getstandardfee estimator and the ZIP-317 marginal-fee reduction. Status, normative content, and the full drafts.">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header>
+  <div class="container">
+    <a href="/" class="logo">
+      <img src="/shield.png" alt="" width="32" height="32">
+      <span>Dynamic Fees</span>
+    </a>
+    <button class="nav-toggle" aria-label="Menu" aria-expanded="false" aria-controls="site-nav">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <line x1="4" y1="6" x2="20" y2="6"/>
+        <line x1="4" y1="12" x2="20" y2="12"/>
+        <line x1="4" y1="18" x2="20" y2="18"/>
+      </svg>
+    </button>
+    <nav id="site-nav">
+      <a href="/specs" class="active">Specs</a>
+      <a href="/design">Design</a>
+      <a href="/research">Research</a>
+      <a href="https://github.com/ShieldedLabs/fee-playground" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<!-- ======== PAGE HERO ======== -->
+<section id="page-hero">
+  <div class="container">
+    <span class="page-eyebrow">Specifications</span>
+    <h1>The drafts behind the numbers</h1>
+    <p class="page-lead">
+      Two ZIP drafts underpin this work: the <a href="#zip-estimator"><code>z_getstandardfee</code>
+      estimator</a> and a <a href="#zip-marginal">ZIP-317 marginal-fee reduction</a>. Both are
+      <strong>Draft, unassigned</strong>, not yet on zips.z.cash. The full text of each is hosted
+      below; discussion is on the Zcash community forum.
+    </p>
+  </div>
+</section>
+
+<!-- ======== ESTIMATOR ZIP ======== -->
+<section id="zip-estimator" class="doc-section">
+  <div class="container">
+    <p class="badge-row">
+      <span class="gate-pill info">Draft</span>
+      <span class="gate-pill info">Unassigned</span>
+      <span class="gate-pill mandatory">Standards / RPC</span>
+    </p>
+    <h2>Dynamic Fee Estimation via <code>z_getstandardfee</code></h2>
+    <dl class="scenario-meta zip-meta">
+      <dt>Owner</dt><dd>Mark Henderson</dd>
+      <dt>Updates</dt><dd>New RPC (no consensus change)</dd>
+      <dt>Created</dt><dd>2026-03-16</dd>
+      <dt>Discussion</dt><dd><a href="https://forum.zcashcommunity.com/c/technology/dynamic-fees/100" target="_blank" rel="noopener">forum.zcashcommunity.com/c/technology/dynamic-fees</a></dd>
+    </dl>
+
+    <p>
+      Specifies <code>z_getstandardfee</code>, a full-node RPC (computed by Zebra, relayed by Zaino
+      and lightwalletd) that publishes a fee recommendation derived from confirmed blocks. The result
+      is <strong>observational</strong>: it reflects what the network recently accepted, not a
+      guarantee of future inclusion. No consensus change; wallets adopt it as a policy recommendation.
+      The minimal v0 response is three fields: <code>standard_fee</code>, <code>version</code>, and
+      <code>height</code>.
+    </p>
+    <p class="zip-subhead">The v0 reference algorithm</p>
+    <ul class="open-list">
+      <li>Look back <strong>50 blocks</strong>, buffered by <strong>5</strong> from the tip (reorg margin). For every non-coinbase transaction, compute <code>fee / max(grace_actions, logical_actions)</code>.</li>
+      <li><strong>Synthetic fill:</strong> model unused block capacity (out of 2 MB) as floor-fee transactions at <strong>1,000 zats/action</strong>, so the median has a stable signal even when the network is quiet.</li>
+      <li>Take the <strong>median</strong> of the combined multiset, then round to the <strong>nearest power of 10</strong>; the floor is enforced as the minimum.</li>
+      <li><strong>Versioned:</strong> any change to parameters or formula increments <code>version</code>, and a new conformance-vector set is published.</li>
+    </ul>
+    <p class="zip-subhead">Open v0 choices</p>
+    <p>
+      Three parameters are fixed in v0 but open to optional refinement if observed behavior warrants:
+      the <strong>oracle</strong> (action-weighted median vs. median-of-medians), the <strong>floor</strong>
+      (1,000 vs. 5,000 zats), and the <strong>quantization</strong> (powers of 10 vs. alternatives).
+      See the <a href="/design#open-design">design page</a> and <a href="/research">research</a>.
+    </p>
+    <p class="zip-subhead">Privacy, and the cost of a fee choice</p>
+    <p>
+      Powers-of-10 bucketing keeps fee entropy low, and the estimator reads only confirmed blocks,
+      never the mempool. The draft also sketches (without specifying) a future direction directly
+      relevant to the <a href="/">priority-usage</a> question: the <strong>anonymity set of a fee
+      choice</strong>, the number of recent confirmed actions that paid the same fee. A tier paid by
+      many blends in; one paid by few stands out. A future estimator version could expose tier
+      occupancy so a wallet can warn before a user sends into a sparsely-populated lane.
+    </p>
+    <p class="research-link">
+      <a href="/specs/zip-draft-dynamic-fees.md" target="_blank" rel="noopener">Read the full draft</a>
+      &middot;
+      <a href="https://forum.zcashcommunity.com/c/technology/dynamic-fees/100" target="_blank" rel="noopener">Discussion</a>
+    </p>
+  </div>
+</section>
+
+<!-- ======== MARGINAL FEE ZIP ======== -->
+<section id="zip-marginal" class="doc-section">
+  <div class="container">
+    <p class="badge-row">
+      <span class="gate-pill info">Draft</span>
+      <span class="gate-pill info">Unassigned</span>
+      <span class="gate-pill mandatory">Standards / Wallet</span>
+    </p>
+    <h2>Reduce Marginal Fee to 1,000 Zatoshis</h2>
+    <dl class="scenario-meta zip-meta">
+      <dt>Owner</dt><dd>Mark Henderson</dd>
+      <dt>Updates</dt><dd>ZIP 317 (wallet convention, no consensus change)</dd>
+      <dt>Created</dt><dd>2026-04-06</dd>
+      <dt>Discussion</dt><dd><a href="https://forum.zcashcommunity.com/c/technology/dynamic-fees/100" target="_blank" rel="noopener">forum.zcashcommunity.com/c/technology/dynamic-fees</a></dd>
+    </dl>
+
+    <p>
+      Reduces ZIP-317's <code>marginal_fee</code> from <strong>5,000 to 1,000 zats</strong> per logical
+      action, dropping the minimum 2-action transaction fee from 10,000 to 2,000 zats. ZIP-317 was
+      calibrated in 2022 near $30 ZEC; as the price rose, the fixed fee grew in fiat terms with no way
+      to adjust. The new value restores the fiat cost to near the original design point and aligns with
+      a powers-of-10 fee alphabet. All other ZIP-317 parameters and formulae are unchanged.
+    </p>
+    <ul class="open-list">
+      <li><strong>Policy-only.</strong> ZIP-317 fees are a wallet convention, so no network upgrade is required. Users keep the ability to override.</li>
+      <li><strong>Safe by defense-in-depth.</strong> The marginal fee is one layer; <code>block_unpaid_action_limit</code> (0 on Zebra today), ZIP-401 mempool eviction, and the ZIP-235 burn are independent of its level.</li>
+      <li><strong>ZIP-235 interaction.</strong> At the new 2,000-zat minimum, 1,200 zats are burned and 800 paid to the miner.</li>
+      <li><strong>Sunset clause.</strong> Expires 12 months after Active status, reverting to 5,000 unless renewed or superseded by an active dynamic-fee mechanism. The sunset forces re-evaluation, the very failure mode that motivated the change.</li>
+    </ul>
+    <div class="callout">
+      <strong>Note.</strong> An earlier idea to also raise ZIP-317's weight-ratio cap from 4 to 10 has
+      been <strong>deprioritized</strong>: priority ships at 4&times; under current parameters, and the
+      cap change is a possible later refinement, not part of this draft. See the
+      <a href="/design#considerations">design page</a>.
+    </div>
+    <p class="research-link">
+      <a href="/specs/zip-draft-marginal-fee.md" target="_blank" rel="noopener">Read the full draft</a>
+      &middot;
+      <a href="https://forum.zcashcommunity.com/c/technology/dynamic-fees/100" target="_blank" rel="noopener">Discussion</a>
+    </p>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <p>
+      Built by <a href="https://shieldedlabs.net" target="_blank" rel="noopener">Shielded Labs</a>.
+      Source on <a href="https://github.com/ShieldedLabs/fee-playground" target="_blank" rel="noopener">GitHub</a>.
+    </p>
+  </div>
+</footer>
+
+<script src="/app.js"></script>
+</body>
+</html>

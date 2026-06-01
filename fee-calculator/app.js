@@ -225,6 +225,147 @@ async function renderChart() {
   });
 }
 
+// ---- Priority usage (Goal 1) ----
+
+function setText(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text;
+}
+
+function formatPct(v) {
+  if (v == null) return "--";
+  if (v > 0 && v < 0.1) return "<0.1%";
+  return `${v.toFixed(v < 10 ? 1 : 0)}%`;
+}
+
+async function fetchUsage() {
+  const split = document.getElementById("usage-split");
+  if (!split) return;
+  let data = null;
+  try {
+    const res = await fetch("/api/usage", { cache: "no-cache" });
+    if (res.ok) data = await res.json();
+  } catch {
+    // leave placeholders; the bar stays empty
+  }
+  const total = Number(data && data.total_tx_count);
+  if (!total) return; // no transactions in the window yet
+
+  const priority = Number(data.priority_tx_count || 0);
+  const priorityPct = (priority / total) * 100;
+  const standardPct = 100 - priorityPct;
+
+  split.setAttribute("data-empty", "false");
+  const segS = document.getElementById("seg-standard");
+  const segP = document.getElementById("seg-priority");
+  if (segS) segS.style.width = `${standardPct}%`;
+  if (segP) segP.style.width = `${priorityPct}%`;
+
+  setText("pct-standard", formatPct(standardPct));
+  setText("pct-priority", formatPct(priorityPct));
+  setText("stat-total", total.toLocaleString());
+  setText("stat-priority-share", formatPct(priorityPct));
+}
+
+let _usageChart = null;
+
+async function renderUsageChart() {
+  const canvas = document.getElementById("usage-chart");
+  const empty = document.getElementById("usage-empty");
+  if (!canvas || typeof Chart === "undefined") return;
+  let entries = [];
+  try {
+    const res = await fetch("/api/usage-history?limit=1500", { cache: "no-cache" });
+    if (res.ok) entries = (await res.json()).entries || [];
+  } catch {
+    // ignore; chart stays empty
+  }
+  entries = entries.filter((e) => e.total_tx_count);
+  if (entries.length < 2) {
+    canvas.style.display = "none";
+    if (empty) empty.style.display = "block";
+    return;
+  }
+  canvas.style.display = "block";
+  if (empty) empty.style.display = "none";
+
+  const labels = entries.map((e) => new Date(e.ts));
+  const priorityShare = entries.map((e) => (e.priority_tx_count / e.total_tx_count) * 100);
+  const standardShare = priorityShare.map((p) => 100 - p);
+  const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const accent = cssVar("--accent") || "#f4b728";
+  const red = cssVar("--red") || "#f87171";
+  const muted = cssVar("--text-muted") || "#6b7394";
+  const border = cssVar("--border") || "#1e2a45";
+
+  if (_usageChart) {
+    _usageChart.data.labels = labels;
+    _usageChart.data.datasets[0].data = priorityShare;
+    _usageChart.data.datasets[1].data = standardShare;
+    _usageChart.update("none");
+    return;
+  }
+
+  _usageChart = new Chart(canvas, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "Priority",
+          data: priorityShare,
+          borderColor: red,
+          backgroundColor: "rgba(248, 113, 113, 0.30)",
+          borderWidth: 1.5,
+          pointRadius: 0,
+          fill: true,
+        },
+        {
+          label: "Standard or below",
+          data: standardShare,
+          borderColor: accent,
+          backgroundColor: "rgba(244, 183, 40, 0.12)",
+          borderWidth: 1.5,
+          pointRadius: 0,
+          fill: true,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      scales: {
+        x: {
+          type: "time",
+          time: { unit: "hour", displayFormats: { hour: "HH:mm" } },
+          grid: { color: border },
+          ticks: { color: muted, font: { size: 11 } },
+        },
+        y: {
+          stacked: true,
+          min: 0,
+          max: 100,
+          grid: { color: border },
+          ticks: { color: muted, font: { size: 11 }, callback: (v) => `${v}%` },
+          title: { display: true, text: "share of transactions", color: muted, font: { size: 11 } },
+        },
+      },
+      plugins: {
+        legend: { position: "top", align: "end", labels: { color: muted, boxWidth: 12, font: { size: 12 } } },
+        tooltip: {
+          backgroundColor: "rgba(19, 26, 43, 0.95)",
+          borderColor: border,
+          borderWidth: 1,
+          titleColor: "#e0e4ef",
+          bodyColor: "#e0e4ef",
+          callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}%` },
+        },
+      },
+    },
+  });
+}
+
 // ---- Mobile nav toggle ----
 
 function initNavToggle() {
@@ -264,4 +405,14 @@ if (needsLiveData) {
 if (document.getElementById("fee-history-chart")) {
   renderChart();
   setInterval(renderChart, HISTORY_POLL_MS);
+}
+
+if (document.getElementById("usage-split")) {
+  fetchUsage();
+  setInterval(fetchUsage, POLL_INTERVAL);
+}
+
+if (document.getElementById("usage-chart")) {
+  renderUsageChart();
+  setInterval(renderUsageChart, HISTORY_POLL_MS);
 }

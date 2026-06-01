@@ -14,8 +14,8 @@
   --green: #34d399;
   --red: #f87171;
   --border: #1e2a45;
-  --mono: "SF Mono", "Cascadia Code", "Fira Code", Menlo, Consolas, monospace;
-  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --mono: "SF Mono", "Cascadia Code", "Fira Code", menlo, consolas, monospace;
+  --sans: -apple-system, blinkmacsystemfont, "Segoe UI", roboto, sans-serif;
 }
 
 html {
@@ -40,6 +40,7 @@ a {
   color: var(--accent);
   text-decoration: none;
 }
+
 a:hover {
   text-decoration: underline;
 }
@@ -55,11 +56,13 @@ header {
   border-bottom: 1px solid var(--border);
   padding: 16px 0;
 }
+
 header .container {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
+
 .logo {
   display: flex;
   align-items: center;
@@ -69,11 +72,13 @@ header .container {
   color: var(--text);
   text-decoration: none;
 }
+
 .logo:hover {
   color: var(--text);
   text-decoration: none;
   opacity: 0.85;
 }
+
 .logo img {
   display: block;
 }
@@ -89,6 +94,7 @@ header .container {
   align-items: center;
   justify-content: center;
 }
+
 .nav-toggle:hover {
   color: var(--text);
   background: var(--bg-elevated);
@@ -99,10 +105,12 @@ nav {
   gap: 24px;
   position: relative;
 }
+
 nav a {
   color: var(--text-muted);
   font-size: 0.9rem;
 }
+
 nav a:hover {
   color: var(--text);
   text-decoration: none;
@@ -113,6 +121,7 @@ nav a:hover {
 #hero {
   padding: 72px 0 40px;
 }
+
 #hero h1 {
   font-size: 1.9rem;
   font-weight: 600;
@@ -121,10 +130,12 @@ nav a:hover {
   line-height: 1.25;
   max-width: 720px;
 }
+
 #hero h1 strong {
   color: var(--accent);
   font-weight: inherit;
 }
+
 .hero-lead {
   font-size: 1.05rem;
   color: var(--text-muted);
@@ -132,10 +143,12 @@ nav a:hover {
   margin-bottom: 28px;
   max-width: 720px;
 }
+
 .hero-lead strong {
   color: var(--accent);
   font-weight: 600;
 }
+
 .assumptions {
   list-style: none;
   padding: 0;
@@ -145,6 +158,7 @@ nav a:hover {
   gap: 12px;
   max-width: 720px;
 }
+
 .assumptions li {
   position: relative;
   padding: 12px 16px 12px 36px;
@@ -155,6 +169,7 @@ nav a:hover {
   line-height: 1.6;
   color: var(--text);
 }
+
 .assumptions li::before {
   content: '';
   position: absolute;
@@ -165,6 +180,7 @@ nav a:hover {
   border-radius: 50%;
   background: var(--accent);
 }
+
 .assumptions strong {
   color: var(--accent);
   font-weight: 600;
@@ -179,6 +195,7 @@ nav a:hover {
   align-items: stretch;
   margin: 24px 0 16px;
 }
+
 .flow-step {
   background: var(--bg-surface);
   border: 1px solid var(--border);
@@ -190,25 +207,31 @@ nav a:hover {
   justify-content: space-between;
   gap: 6px;
 }
+
 .flow-step.output {
   border-color: var(--accent);
 }
+
 .flow-label {
   font-size: 0.85rem;
   font-weight: 600;
   color: var(--text);
 }
+
 .flow-label code {
   font-size: 0.85em;
 }
+
 .flow-body {
   font-size: 0.75rem;
   color: var(--text-muted);
   line-height: 1.4;
 }
+
 .flow-body code {
   font-size: 0.95em;
 }
+
 .flow-tag {
   font-family: var(--mono);
   font-size: 0.65rem;
@@ -217,6 +240,7 @@ nav a:hover {
   color: var(--accent);
   margin-top: 4px;
 }
+
 .flow-arrow {
   display: flex;
   align-items: center;
@@ -232,10 +256,12 @@ nav a:hover {
   border-top: 1px solid var(--border);
   text-align: center;
 }
+
 #live h2 {
   font-size: 1.3rem;
   margin-bottom: 12px;
 }
+
 #live .section-lead {
   margin-left: auto;
   margin-right: auto;
@@ -253,34 +279,41 @@ nav a:hover {
   border-radius: 12px;
   padding: 20px 24px;
 }
+
 .chart-header {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
   margin-bottom: 16px;
 }
+
 .chart-header h3 {
   font-size: 0.95rem;
   font-weight: 600;
   color: var(--text);
 }
+
 .chart-export {
   font-family: var(--mono);
   font-size: 0.75rem;
   color: var(--text-muted);
 }
+
 .chart-export:hover {
   color: var(--accent);
   text-decoration: none;
 }
+
 .chart-canvas-wrap {
   position: relative;
   height: 240px;
   width: 100%;
 }
+
 .chart-canvas-wrap canvas {
   max-width: 100%;
 }
+
 .chart-empty {
   position: absolute;
   inset: 0;
@@ -298,6 +331,7 @@ nav a:hover {
   justify-content: center;
   margin-bottom: 32px;
 }
+
 .fee-card {
   background: var(--bg-surface);
   border: 1px solid var(--border);
@@ -306,16 +340,20 @@ nav a:hover {
   min-width: 240px;
   transition: border-color 0.2s;
 }
+
 .fee-card:not(.muted) {
   border-color: var(--accent);
 }
+
 .fee-card.muted {
   opacity: 0.5;
 }
+
 .fee-card.active {
   opacity: 1;
   border-color: var(--red);
 }
+
 .card-label {
   font-size: 0.85rem;
   color: var(--text-muted);
@@ -323,23 +361,27 @@ nav a:hover {
   letter-spacing: 0.05em;
   margin-bottom: 8px;
 }
+
 .card-value {
   font-family: var(--mono);
   font-size: 2.4rem;
   font-weight: 700;
   line-height: 1.2;
 }
+
 .card-unit {
   font-size: 0.8rem;
   color: var(--text-muted);
   margin-top: 4px;
 }
+
 .card-usd {
   font-size: 0.85rem;
   color: var(--text-muted);
   margin-top: 8px;
   font-family: var(--mono);
 }
+
 .card-note {
   font-size: 0.75rem;
   color: var(--text-muted);
@@ -355,6 +397,7 @@ nav a:hover {
   font-size: 0.85rem;
   color: var(--text-muted);
 }
+
 .status-dot {
   width: 8px;
   height: 8px;
@@ -364,6 +407,7 @@ nav a:hover {
 }
 .status-dot.green { background: var(--green); }
 .status-dot.red { background: var(--red); }
+
 .separator {
   color: var(--border);
 }
@@ -374,10 +418,12 @@ nav a:hover {
   padding: 60px 0;
   border-top: 1px solid var(--border);
 }
+
 #try-it h2 {
   font-size: 1.4rem;
   margin-bottom: 8px;
 }
+
 #try-it > .container > p {
   color: var(--text-muted);
   margin-bottom: 24px;
@@ -388,6 +434,7 @@ nav a:hover {
   gap: 0;
   margin-bottom: 0;
 }
+
 .tab {
   background: var(--bg);
   border: 1px solid var(--border);
@@ -400,9 +447,11 @@ nav a:hover {
   border-radius: 8px 8px 0 0;
   transition: background 0.15s, color 0.15s;
 }
+
 .tab:hover {
   color: var(--text);
 }
+
 .tab.active {
   background: var(--bg-surface);
   color: var(--text);
@@ -412,6 +461,7 @@ nav a:hover {
 .tab-content {
   display: none;
 }
+
 .tab-content.active {
   display: block;
 }
@@ -419,13 +469,15 @@ nav a:hover {
 .code-block, .response-block {
   background: var(--bg-surface);
   border: 1px solid var(--border);
-  border-radius: 0 8px 8px 8px;
+  border-radius: 0 8px 8px;
   overflow: hidden;
   margin-bottom: 16px;
 }
+
 .response-block {
   border-radius: 8px;
 }
+
 .code-header {
   display: flex;
   justify-content: space-between;
@@ -437,6 +489,7 @@ nav a:hover {
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
+
 .copy-btn {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
@@ -447,10 +500,12 @@ nav a:hover {
   cursor: pointer;
   font-family: var(--sans);
 }
+
 .copy-btn:hover {
   color: var(--text);
   border-color: var(--text-muted);
 }
+
 .code-block pre, .response-block pre {
   padding: 16px;
   overflow-x: auto;
@@ -468,6 +523,7 @@ nav a:hover {
   display: inline-block;
   animation: pulse 2s infinite;
 }
+
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
@@ -479,6 +535,7 @@ nav a:hover {
   padding: 60px 0;
   border-top: 1px solid var(--border);
 }
+
 #how-it-works h2 {
   font-size: 1.4rem;
   margin-bottom: 32px;
@@ -490,11 +547,13 @@ nav a:hover {
   gap: 24px;
   margin-bottom: 32px;
 }
+
 .step {
   display: flex;
   gap: 16px;
   align-items: flex-start;
 }
+
 .step-number {
   flex-shrink: 0;
   width: 32px;
@@ -510,10 +569,12 @@ nav a:hover {
   font-weight: 700;
   color: var(--accent);
 }
+
 .step-body {
   font-size: 0.95rem;
   line-height: 1.6;
 }
+
 .step-body code {
   background: var(--bg-elevated);
   padding: 2px 6px;
@@ -532,6 +593,7 @@ nav a:hover {
   padding: 60px 0;
   border-top: 1px solid var(--border);
 }
+
 #roadmap h2 {
   font-size: 1.4rem;
   margin-bottom: 32px;
@@ -542,6 +604,7 @@ nav a:hover {
   padding-left: 32px;
   margin-bottom: 48px;
 }
+
 .timeline::before {
   content: "";
   position: absolute;
@@ -556,9 +619,11 @@ nav a:hover {
   position: relative;
   margin-bottom: 32px;
 }
+
 .phase:last-child {
   margin-bottom: 0;
 }
+
 .phase-marker {
   position: absolute;
   left: -32px;
@@ -569,26 +634,32 @@ nav a:hover {
   background: var(--bg);
   border: 2px solid var(--border);
 }
+
 .phase.done .phase-marker {
   background: var(--green);
   border-color: var(--green);
 }
+
 .phase.current .phase-marker {
   background: var(--accent);
   border-color: var(--accent);
 }
+
 .phase-body h3 {
   font-size: 1rem;
   font-weight: 600;
   margin-bottom: 4px;
 }
+
 .phase-body h3 code {
   font-weight: 600;
 }
+
 .phase-date {
   font-size: 0.8rem;
   color: var(--text-muted);
 }
+
 .phase-body p {
   margin-top: 8px;
   font-size: 0.9rem;
@@ -603,15 +674,18 @@ nav a:hover {
   padding: 32px;
   text-align: center;
 }
+
 .cta h3 {
   font-size: 1.1rem;
   margin-bottom: 8px;
 }
+
 .cta p {
   color: var(--text-muted);
   margin-bottom: 20px;
   font-size: 0.95rem;
 }
+
 .btn {
   display: inline-block;
   background: var(--accent);
@@ -622,6 +696,7 @@ nav a:hover {
   font-size: 0.9rem;
   transition: opacity 0.15s;
 }
+
 .btn:hover {
   opacity: 0.9;
   text-decoration: none;
@@ -643,6 +718,7 @@ nav a.active {
   color: var(--text);
   position: relative;
 }
+
 nav a.active::after {
   content: '';
   position: absolute;
@@ -659,6 +735,7 @@ nav a.active::after {
 #page-hero {
   padding: 60px 0 32px;
 }
+
 .page-eyebrow {
   display: inline-block;
   font-size: 0.75rem;
@@ -667,18 +744,21 @@ nav a.active::after {
   letter-spacing: 0.08em;
   margin-bottom: 12px;
 }
+
 #page-hero h1 {
   font-size: 1.7rem;
   font-weight: 600;
   margin-bottom: 16px;
   line-height: 1.3;
 }
+
 .page-lead {
   font-size: 1rem;
   color: var(--text-muted);
   line-height: 1.7;
   max-width: 640px;
 }
+
 .page-lead strong {
   color: var(--text);
   font-weight: 600;
@@ -715,6 +795,7 @@ nav a.active::after {
   padding: 56px 0;
   border-top: 1px solid var(--border);
 }
+
 #intro h2,
 #portal h2,
 #principles h2,
@@ -744,6 +825,7 @@ nav a.active::after {
   gap: 12px;
   margin-top: 16px;
 }
+
 .open-design-row {
   display: grid;
   grid-template-columns: 130px 1fr 1fr;
@@ -759,19 +841,23 @@ nav a.active::after {
   font-size: 0.9rem;
   line-height: 1.55;
 }
+
 .open-design-choice {
   grid-area: choice;
   font-weight: 600;
   color: var(--text);
 }
+
 .open-design-current {
   grid-area: current;
   color: var(--text);
 }
+
 .open-design-alt {
   grid-area: alt;
   color: var(--text-muted);
 }
+
 .open-design-settled {
   grid-area: settled;
   font-size: 0.8rem;
@@ -779,17 +865,20 @@ nav a.active::after {
   border-top: 1px solid var(--border);
   padding-top: 8px;
 }
+
 .open-design-settled::before {
-  content: "Settled by: ";
+  content: "Informed by: ";
   color: var(--accent);
   font-weight: 600;
 }
+
 .open-design-note {
   color: var(--text-muted);
   font-size: 0.85em;
   font-style: italic;
 }
-@media (max-width: 640px) {
+
+@media (width <= 640px) {
   .open-design-row {
     grid-template-columns: 1fr;
     grid-template-areas:
@@ -820,33 +909,40 @@ nav a.active::after {
   gap: 12px;
   margin: 16px 0;
 }
+
 .privacy-card {
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 18px 20px;
 }
+
 .privacy-card h3 {
   font-size: 0.95rem;
   font-weight: 600;
   margin-bottom: 8px;
   color: var(--text);
 }
+
 .privacy-card p {
   font-size: 0.85rem;
   color: var(--text-muted);
   line-height: 1.55;
 }
+
 .privacy-card code {
   font-size: 0.95em;
 }
+
 #privacy .footnote {
   margin-top: 20px;
 }
+
 #privacy .footnote strong {
   color: var(--text);
   font-weight: 600;
 }
+
 #intro p,
 #about-sim p,
 #separation p,
@@ -858,6 +954,7 @@ nav a.active::after {
   margin-bottom: 16px;
   max-width: 640px;
 }
+
 #intro p:last-child,
 #about-sim p:last-child,
 #separation p:last-child,
@@ -873,6 +970,7 @@ nav a.active::after {
   grid-template-columns: repeat(3, 1fr);
   gap: 16px;
 }
+
 .portal-card {
   display: block;
   background: var(--bg-surface);
@@ -882,22 +980,26 @@ nav a.active::after {
   color: var(--text);
   transition: border-color 0.2s, transform 0.2s;
 }
+
 .portal-card:hover {
   border-color: var(--accent);
   text-decoration: none;
   transform: translateY(-2px);
 }
+
 .portal-card h3 {
   font-size: 1rem;
   font-weight: 600;
   margin-bottom: 8px;
 }
+
 .portal-card p {
   font-size: 0.85rem;
   color: var(--text-muted);
   line-height: 1.5;
   margin-bottom: 16px;
 }
+
 .portal-cta {
   font-size: 0.8rem;
   color: var(--accent);
@@ -911,18 +1013,21 @@ nav a.active::after {
   grid-template-columns: repeat(3, 1fr);
   gap: 16px;
 }
+
 .principle-card {
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 24px;
 }
+
 .principle-card h3 {
   font-size: 1rem;
   font-weight: 600;
   color: var(--accent);
   margin-bottom: 8px;
 }
+
 .principle-card p {
   font-size: 0.9rem;
   color: var(--text-muted);
@@ -936,6 +1041,7 @@ nav a.active::after {
   flex-direction: column;
   gap: 12px;
 }
+
 .layer {
   background: var(--bg-surface);
   border: 1px solid var(--border);
@@ -943,6 +1049,7 @@ nav a.active::after {
   border-radius: 8px;
   padding: 20px 24px;
 }
+
 .layer-meta {
   font-size: 0.7rem;
   color: var(--text-muted);
@@ -950,30 +1057,37 @@ nav a.active::after {
   letter-spacing: 0.06em;
   margin-bottom: 4px;
 }
+
 .layer-meta a {
   color: var(--text-muted);
   text-decoration: underline;
 }
+
 .layer-meta a:hover {
   color: var(--accent);
 }
+
 .layer-name {
   font-size: 1.05rem;
   font-weight: 600;
   margin-bottom: 12px;
 }
+
 .layer-name code {
   font-size: 0.95em;
 }
+
 .layer p {
   font-size: 0.9rem;
   color: var(--text-muted);
   line-height: 1.6;
   margin-bottom: 8px;
 }
+
 .layer p:last-child {
   margin-bottom: 0;
 }
+
 .formula {
   font-family: var(--mono);
   background: var(--bg);
@@ -981,6 +1095,7 @@ nav a.active::after {
   border-radius: 6px;
   margin: 12px 0;
 }
+
 .callout {
   background: var(--bg);
   border-left: 2px solid var(--text-muted);
@@ -990,9 +1105,11 @@ nav a.active::after {
   color: var(--text-muted);
   line-height: 1.6;
 }
+
 .callout strong {
   color: var(--text);
 }
+
 .callout-data {
   border-left-color: var(--accent);
   background: var(--bg-surface);
@@ -1000,6 +1117,7 @@ nav a.active::after {
   padding: 16px 20px;
   font-size: 0.9rem;
 }
+
 .callout-data code {
   background: var(--bg);
   padding: 1px 5px;
@@ -1013,18 +1131,21 @@ nav a.active::after {
   flex-direction: column;
   gap: 16px;
 }
+
 .rejected-item {
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 20px 24px;
 }
+
 .rejected-item h3 {
   font-size: 1rem;
   font-weight: 600;
   margin-bottom: 8px;
   color: var(--text-muted);
 }
+
 .rejected-item p {
   font-size: 0.9rem;
   color: var(--text-muted);
@@ -1040,6 +1161,7 @@ nav a.active::after {
   gap: 12px;
   padding: 0;
 }
+
 .open-list li {
   background: var(--bg-surface);
   border: 1px solid var(--border);
@@ -1058,6 +1180,7 @@ nav a.active::after {
   gap: 12px;
   align-items: stretch;
 }
+
 .chain-col {
   background: var(--bg-surface);
   border: 1px solid var(--border);
@@ -1065,6 +1188,7 @@ nav a.active::after {
   padding: 16px;
   text-align: center;
 }
+
 .chain-step {
   font-size: 0.7rem;
   text-transform: uppercase;
@@ -1073,11 +1197,13 @@ nav a.active::after {
   margin-bottom: 8px;
   font-weight: 700;
 }
+
 .chain-col p {
   font-size: 0.85rem;
   color: var(--text-muted);
   line-height: 1.5;
 }
+
 .chain-arrow {
   display: flex;
   align-items: center;
@@ -1096,23 +1222,28 @@ nav a.active::after {
   letter-spacing: 0.06em;
   margin: 24px 0 12px;
 }
+
 .gate-cards {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 12px;
 }
+
 .gate-card {
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 16px 20px;
 }
+
 .gate-card.mandatory {
   border-left: 3px solid var(--accent);
 }
+
 .gate-card.info {
   border-left: 3px solid var(--text-muted);
 }
+
 .gate-id {
   font-family: var(--mono);
   font-size: 1rem;
@@ -1120,14 +1251,17 @@ nav a.active::after {
   color: var(--accent);
   margin-bottom: 2px;
 }
+
 .gate-card.info .gate-id {
   color: var(--text-muted);
 }
+
 .gate-name {
   font-size: 0.95rem;
   font-weight: 600;
   margin-bottom: 6px;
 }
+
 .gate-card p {
   font-size: 0.85rem;
   color: var(--text-muted);
@@ -1141,6 +1275,7 @@ nav a.active::after {
   grid-template-columns: repeat(2, 1fr);
   gap: 12px;
 }
+
 .falsifier-card {
   background: var(--bg-surface);
   border: 1px solid var(--border);
@@ -1148,16 +1283,19 @@ nav a.active::after {
   border-radius: 8px;
   padding: 16px 20px;
 }
+
 .falsifier-card h3 {
   font-size: 0.95rem;
   font-weight: 600;
   margin-bottom: 8px;
 }
+
 .falsifier-card p {
   font-size: 0.85rem;
   color: var(--text-muted);
   line-height: 1.5;
 }
+
 .falsifier-card ul {
   margin: 0;
   padding-left: 18px;
@@ -1165,6 +1303,7 @@ nav a.active::after {
   color: var(--text-muted);
   line-height: 1.6;
 }
+
 .falsifier-card ul li {
   margin-bottom: 4px;
 }
@@ -1187,37 +1326,44 @@ nav a.active::after {
   flex-direction: column;
   gap: 16px;
 }
+
 .scenario-card {
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 24px;
 }
+
 .scenario-card.control {
   border-left: 3px solid var(--text-muted);
   padding: 20px 24px;
 }
+
 .scenario-card h3 {
   font-size: 1.05rem;
   font-weight: 600;
   margin-bottom: 8px;
 }
+
 .scenario-desc {
   font-size: 0.9rem;
   color: var(--text);
   line-height: 1.6;
   margin-bottom: 16px;
 }
+
 .scenario-card.control .scenario-desc {
   color: var(--text-muted);
   margin-bottom: 0;
 }
+
 .scenario-meta {
   display: grid;
   grid-template-columns: 130px 1fr;
   gap: 6px 16px;
   font-size: 0.85rem;
 }
+
 .scenario-meta dt {
   color: var(--text-muted);
   text-transform: uppercase;
@@ -1225,17 +1371,21 @@ nav a.active::after {
   font-size: 0.7rem;
   padding-top: 4px;
 }
+
 .scenario-meta dd {
   color: var(--text);
   margin: 0;
   line-height: 1.5;
 }
+
 .scenario-meta dd a {
   color: var(--accent);
 }
+
 .controls-heading {
   margin-top: 48px;
 }
+
 .gate-pill {
   display: inline-block;
   font-family: var(--mono);
@@ -1245,41 +1395,49 @@ nav a.active::after {
   border-radius: 4px;
   margin-right: 4px;
 }
+
 .gate-pill.mandatory {
-  background: rgb(244 183 40 / 0.15);
+  background: rgb(244 183 40 / 15%);
   color: var(--accent);
-  border: 1px solid rgb(244 183 40 / 0.3);
+  border: 1px solid rgb(244 183 40 / 30%);
 }
+
 .gate-pill.info {
-  background: rgb(107 115 148 / 0.15);
+  background: rgb(107 115 148 / 15%);
   color: var(--text-muted);
-  border: 1px solid rgb(107 115 148 / 0.3);
+  border: 1px solid rgb(107 115 148 / 30%);
 }
 
 /* ---- Responsive ---- */
 
-@media (max-width: 640px) {
+@media (width <= 640px) {
   #hero {
     padding: 48px 0 32px;
   }
+
   #hero h1 {
     font-size: 1.4rem;
   }
+
   .hero-lead {
     font-size: 0.95rem;
   }
+
   #page-hero h1 {
     font-size: 1.4rem;
   }
+
   .fee-cards {
     flex-direction: column;
     align-items: center;
   }
+
   .fee-card {
     min-width: 0;
     width: 100%;
     max-width: 320px;
   }
+
   .card-value {
     font-size: 1.8rem;
   }
@@ -1288,6 +1446,7 @@ nav a.active::after {
   .nav-toggle {
     display: flex;
   }
+
   header nav {
     display: none;
     flex-direction: column;
@@ -1301,23 +1460,28 @@ nav a.active::after {
     padding: 8px;
     min-width: 180px;
     z-index: 10;
-    box-shadow: 0 8px 24px rgb(0 0 0 / 0.4);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 40%);
   }
+
   header nav.open {
     display: flex;
   }
+
   header nav a {
     padding: 8px 12px;
     border-radius: 4px;
     font-size: 0.95rem;
   }
+
   header nav a:hover {
     background: var(--bg-surface);
   }
+
   header nav a.active {
     background: var(--bg-surface);
     color: var(--accent);
   }
+
   header nav a.active::after {
     display: none;
   }
@@ -1329,17 +1493,21 @@ nav a.active::after {
   .privacy-cards {
     grid-template-columns: 1fr;
   }
+
   .chain {
     grid-template-columns: 1fr;
   }
+
   .chain-arrow {
     transform: rotate(90deg);
     height: 24px;
   }
+
   .scenario-meta {
     grid-template-columns: 1fr;
     gap: 2px 0;
   }
+
   .scenario-meta dt {
     margin-top: 8px;
   }
@@ -1349,7 +1517,299 @@ nav a.active::after {
     grid-template-columns: 1fr;
     grid-template-rows: auto 16px auto 16px auto 16px auto;
   }
+
   .flow-arrow {
     transform: rotate(90deg);
   }
+}
+
+/* ---- Roadmap flow (homepage) ---- */
+
+.roadmap-flow {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  margin-top: 24px;
+  max-width: 680px;
+}
+
+.roadmap-stage {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: 10px;
+  padding: 18px 22px;
+}
+
+.roadmap-stage.done {
+  border-left-color: var(--green);
+}
+
+.roadmap-stage.current {
+  border-left-color: var(--accent);
+}
+
+.roadmap-stage.optional {
+  border-style: dashed;
+  border-left-style: solid;
+  border-left-color: var(--text-muted);
+  opacity: 0.85;
+}
+
+.roadmap-stage-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.roadmap-num {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.roadmap-stage.done .roadmap-num {
+  color: var(--green);
+  border-color: var(--green);
+}
+
+.roadmap-stage.current .roadmap-num {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.roadmap-stage-head h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+  flex: 1;
+}
+
+.roadmap-status {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  font-family: var(--mono);
+}
+
+.roadmap-stage.done .roadmap-status {
+  color: var(--green);
+}
+
+.roadmap-stage.current .roadmap-status {
+  color: var(--accent);
+}
+
+.roadmap-stage p {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.roadmap-arrow {
+  align-self: flex-start;
+  margin-left: 32px;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 6px 0;
+}
+
+/* ---- Research page sections ---- */
+
+#audit,
+#simulation,
+#modeling,
+#undercutting,
+#conformance {
+  padding: 48px 0;
+  border-top: 1px solid var(--border);
+}
+
+#audit h2,
+#simulation h2,
+#modeling h2,
+#undercutting h2,
+#conformance h2 {
+  font-size: 1.3rem;
+  margin-bottom: 8px;
+}
+
+#audit p,
+#simulation p,
+#modeling p,
+#undercutting p,
+#conformance p {
+  color: var(--text);
+  font-size: 0.95rem;
+  line-height: 1.7;
+  margin-bottom: 14px;
+  max-width: 660px;
+}
+
+#audit .section-lead,
+#simulation .section-lead,
+#modeling .section-lead,
+#undercutting .section-lead {
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+
+.research-link {
+  font-size: 0.85rem !important;
+  font-family: var(--mono);
+  color: var(--text-muted);
+  padding-top: 4px;
+}
+
+.research-link a {
+  color: var(--accent);
+}
+
+/* ---- Priority usage (homepage, Goal 1) ---- */
+
+#usage {
+  padding: 56px 0;
+  border-top: 1px solid var(--border);
+}
+
+#usage h2 {
+  font-size: 1.3rem;
+  margin-bottom: 12px;
+}
+
+.split-bar {
+  display: flex;
+  height: 28px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  margin: 8px 0 12px;
+}
+
+.split-seg {
+  height: 100%;
+  transition: width 0.5s ease;
+}
+
+.split-standard {
+  background: var(--accent);
+}
+
+.split-priority {
+  background: var(--red);
+}
+
+.split-bar[data-empty="true"] .split-standard {
+  background: var(--bg-elevated);
+}
+
+.split-legend {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.split-legend strong {
+  color: var(--text);
+  font-family: var(--mono);
+  margin-left: 4px;
+}
+
+.swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+.swatch-standard { background: var(--accent); }
+.swatch-priority { background: var(--red); }
+
+.usage-stats {
+  gap: 16px;
+  margin: 24px 0 8px;
+}
+
+.usage-stats .fee-card {
+  border-color: var(--border);
+  padding: 20px 28px;
+  min-width: 180px;
+}
+
+.usage-stats .card-value {
+  font-size: 1.9rem;
+}
+
+/* ---- Spec & doc pages (specs, design considerations) ---- */
+
+.doc-section {
+  padding: 56px 0;
+  border-top: 1px solid var(--border);
+}
+
+.doc-section h2 {
+  font-size: 1.3rem;
+  margin-bottom: 12px;
+}
+
+.doc-section h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 24px 0 8px;
+}
+
+.doc-section p {
+  color: var(--text);
+  font-size: 0.95rem;
+  line-height: 1.7;
+  margin-bottom: 16px;
+  max-width: 660px;
+}
+
+.doc-section p.badge-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  max-width: none;
+}
+
+.doc-section p.zip-subhead {
+  font-weight: 600;
+  color: var(--text);
+  margin-top: 24px;
+  margin-bottom: 8px;
+  max-width: none;
+}
+
+.doc-section p.section-lead {
+  color: var(--text-muted);
+}
+
+.doc-section p.research-link {
+  max-width: none;
+}
+
+.zip-meta {
+  margin-bottom: 20px;
 }

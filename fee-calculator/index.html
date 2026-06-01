@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Zcash Dynamic Fees</title>
-  <meta name="description" content="A research site for the dynamic fee mechanism Zcash is testing. Live z_getstandardfees endpoint, design rationale, falsifiable tests, and how it touches the rest of the protocol stack.">
+  <meta name="description" content="What Zcash transactions actually pay: live mainnet usage of the priority fee, the specs behind the z_getstandardfee estimator, and how little the priority signal reveals.">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -23,70 +23,90 @@
       </svg>
     </button>
     <nav id="site-nav">
+      <a href="/specs">Specs</a>
       <a href="/design">Design</a>
-      <a href="/adversarial">Adversarial</a>
-      <a href="/interactions">Interactions</a>
+      <a href="/research">Research</a>
       <a href="https://github.com/ShieldedLabs/fee-playground" target="_blank" rel="noopener">GitHub</a>
     </nav>
   </div>
 </header>
 
-<!-- ======== HERO: ASSUMPTIONS ======== -->
-<section id="hero">
+<!-- ======== HERO ======== -->
+<section id="page-hero">
   <div class="container">
-    <h1>A Zcash fee market should be <strong>simple</strong>, <strong>free-market based</strong>, and <strong>private</strong>.</h1>
-    <p class="hero-lead">
-      Users should be able to <strong>choose to pay more or less</strong> for different classes of service &mdash; better UX for them, a stronger security budget overall. The mechanism should be <strong>deployable incrementally</strong> without waiting for a Network Upgrade, and the core consensus logic should be <strong>kept isolated</strong> from the fee system.
+    <span class="page-eyebrow">Zcash dynamic fees</span>
+    <h1>What Zcash transactions actually pay</h1>
+    <p class="page-lead">
+      Zcash now publishes a fee suggestion with two tiers: a <strong>standard</strong> fee and a
+      <strong>priority</strong> fee for faster inclusion. The obvious privacy question is how much the
+      choice reveals. This page measures it directly from mainnet: how many real transactions take
+      priority, and how that splits the anonymity set. The <a href="/specs">specs</a> and the
+      <a href="/design">design</a> are linked throughout.
     </p>
   </div>
 </section>
 
-<!-- ======== VISUALIZATION: THE IDEA ======== -->
-<section id="idea">
+<!-- ======== PRIORITY USAGE (Goal 1) ======== -->
+<section id="usage">
   <div class="container">
-    <span class="section-eyebrow">Simple</span>
-    <h2>The idea in one image</h2>
+    <span class="section-eyebrow">Mainnet usage</span>
+    <h2>Who actually pays for priority</h2>
     <p class="section-lead">
-      The estimator publishes a recommendation derived only from already-public data. No mempool inspection, no continuous bidding, no admin parameters. Each step in the flow corresponds to one of the assumptions above.
+      Measured over the last 50 blocks, from confirmed non-coinbase transactions. The priority signal
+      is a single bit by design: a transaction either takes the priority lane or it does not. The split
+      below is that bit, live.
     </p>
-    <div class="flow-diagram">
-      <div class="flow-step">
-        <div class="flow-label">Confirmed blocks</div>
-        <div class="flow-body">Last 50, buffered by 5</div>
-        <div class="flow-tag">public</div>
+
+    <div class="split-bar" id="usage-split" data-empty="true">
+      <div class="split-seg split-standard" id="seg-standard" style="width:100%"></div>
+      <div class="split-seg split-priority" id="seg-priority" style="width:0%"></div>
+    </div>
+    <div class="split-legend">
+      <span><span class="swatch swatch-standard"></span> Standard or below <strong id="pct-standard">--</strong></span>
+      <span><span class="swatch swatch-priority"></span> Priority <strong id="pct-priority">--</strong></span>
+    </div>
+
+    <div class="fee-cards usage-stats">
+      <div class="fee-card">
+        <div class="card-label">Transactions</div>
+        <div class="card-value" id="stat-total">--</div>
+        <div class="card-unit">in the window</div>
       </div>
-      <div class="flow-arrow" aria-hidden="true">&rarr;</div>
-      <div class="flow-step">
-        <div class="flow-label">Median</div>
-        <div class="flow-body">Action-weighted, with synthetic floor fill</div>
-        <div class="flow-tag">simple</div>
-      </div>
-      <div class="flow-arrow" aria-hidden="true">&rarr;</div>
-      <div class="flow-step">
-        <div class="flow-label">Bucket</div>
-        <div class="flow-body">Round to nearest power of 10</div>
-        <div class="flow-tag">private</div>
-      </div>
-      <div class="flow-arrow" aria-hidden="true">&rarr;</div>
-      <div class="flow-step output">
-        <div class="flow-label"><code>standard_fee</code></div>
-        <div class="flow-body">+ <code>priority_fee</code> at 10&times;, always available</div>
-        <div class="flow-tag">market</div>
+      <div class="fee-card">
+        <div class="card-label">Priority share</div>
+        <div class="card-value" id="stat-priority-share">--</div>
+        <div class="card-unit">of real transactions</div>
       </div>
     </div>
-    <p class="footnote">
-      Policy-only. No consensus change. Wallets and indexers adopt voluntarily. The mechanism is in <a href="/design">draft form</a>; the live readings below are from the published <a href="https://github.com/ShieldedLabs/zebra-dynamic-fees" target="_blank" rel="noopener"><code>z_getstandardfees</code> endpoint</a>.
-    </p>
+
+    <div class="chart-container">
+      <div class="chart-header">
+        <h3>Priority share over time</h3>
+      </div>
+      <div class="chart-canvas-wrap">
+        <canvas id="usage-chart"></canvas>
+        <p class="chart-empty" id="usage-empty">Collecting samples...</p>
+      </div>
+    </div>
+
+    <div class="callout callout-data" id="usage-note">
+      <strong>Reading this honestly.</strong> Adoption is early, so the priority bucket starts small.
+      That is the point worth being candid about: when priority is rare, it is <em>more</em>
+      identifying for the few who use it, not less. The design bounds the leak to about one bit
+      regardless, and the reassuring direction is the trend rather than today's number. As wallets ship
+      the feature, both buckets grow and the bit means less. Watch it fill.
+    </div>
   </div>
 </section>
 
-<!-- ======== LIVE READINGS ======== -->
+<!-- ======== CURRENT SUGGESTION (demoted) ======== -->
 <section id="live">
   <div class="container">
-    <span class="section-eyebrow">Free-market based</span>
-    <h2>Live readings</h2>
+    <span class="section-eyebrow">Right now</span>
+    <h2>The current suggestion</h2>
     <p class="section-lead">
-      Two prices, always available. Priority is 10&times; Standard &mdash; pick it for faster inclusion when blocks fill. Drawn from the live <code>z_getstandardfees</code> endpoint.
+      The live <code>z_getstandardfee</code> reading. Priority is always 10&times; standard; the
+      congestion flag says whether paying it actually buys faster inclusion right now.
     </p>
     <div class="fee-cards">
       <div class="fee-card" id="standard-card">
@@ -110,128 +130,72 @@
       <span class="separator">|</span>
       <span>Estimator <code id="estimator-version">--</code></span>
     </div>
-
-    <div class="chart-container">
-      <div class="chart-header">
-        <h3>Last 24 hours</h3>
-        <a href="/api/history.csv" class="chart-export">Export CSV</a>
-      </div>
-      <div class="chart-canvas-wrap">
-        <canvas id="fee-history-chart"></canvas>
-        <p class="chart-empty" id="chart-empty">Collecting samples...</p>
-      </div>
-    </div>
   </div>
 </section>
 
-<!-- ======== PRIVACY ======== -->
-<section id="privacy">
+<!-- ======== HOW THE NUMBER IS MADE ======== -->
+<section id="idea">
   <div class="container">
-    <span class="section-eyebrow">Private</span>
-    <h2>How fees stay private</h2>
+    <span class="section-eyebrow">How the number is made</span>
+    <h2>A suggestion from public data, nothing more</h2>
     <p class="section-lead">
-      The mechanism is built to leak as little as possible about individual users &mdash; by reading only public data, collapsing fee values to discrete buckets, and keeping all wallets quoting the same number.
+      The estimator reads only already-public data: confirmed blocks, never the mempool. It is an
+      algorithmic posted-price estimator with a discrete fee alphabet, not a continuous-bid auction.
+      Each step maps to a property worth keeping.
     </p>
-    <div class="privacy-cards">
-      <div class="privacy-card">
-        <h3>Reads only confirmed blocks</h3>
-        <p>No mempool inspection. The recommendation is computed from data the network already publishes &mdash; running the estimator leaks nothing new.</p>
+    <div class="flow-diagram">
+      <div class="flow-step">
+        <div class="flow-label">Confirmed blocks</div>
+        <div class="flow-body">Last 50, buffered by 5</div>
+        <div class="flow-tag">public</div>
       </div>
-      <div class="privacy-card">
-        <h3>Powers-of-10 bucketing</h3>
-        <p>Continuous bidding produces fees with high entropy &mdash; a timing signal. Bucketing collapses possible quoted values to roughly five (1,000 / 10,000 / 100,000 / 1,000,000 zats per action).</p>
+      <div class="flow-arrow" aria-hidden="true">&rarr;</div>
+      <div class="flow-step">
+        <div class="flow-label">Median</div>
+        <div class="flow-body">Action-weighted, with synthetic floor fill</div>
+        <div class="flow-tag">simple</div>
       </div>
-      <div class="privacy-card">
-        <h3>A single quote per network state</h3>
-        <p>All wallets reading <code>z_getstandardfees</code> see the same number. There is no per-wallet fee-calculation methodology to fingerprint.</p>
+      <div class="flow-arrow" aria-hidden="true">&rarr;</div>
+      <div class="flow-step">
+        <div class="flow-label">Bucket</div>
+        <div class="flow-body">Round to nearest power of 10</div>
+        <div class="flow-tag">private</div>
       </div>
-      <div class="privacy-card">
-        <h3>Two tiers, two prices</h3>
-        <p>Wallets show users a Standard option and a Priority option at 10&times; Standard. The set of distinguishable user choices stays small &mdash; two buckets across normal traffic.</p>
+      <div class="flow-arrow" aria-hidden="true">&rarr;</div>
+      <div class="flow-step output">
+        <div class="flow-label"><code>standard_fee</code></div>
+        <div class="flow-body">+ <code>priority_fee</code> at 10&times;</div>
+        <div class="flow-tag">published</div>
       </div>
     </div>
     <p class="footnote">
-      The <a href="/research/nikete-audit-2026.pdf" target="_blank" rel="noopener">external audit</a> identifies three privacy conditions still under test: <strong>bucket transitions</strong> create coordinated timing signals when the recommendation jumps from one power of ten to the next; <strong>fast-lane adoption</strong> may segment urgent users from non-urgent ones; and <strong>wallet-implementation divergence</strong> would itself become a fingerprint. These are tracked as the Privacy falsifier in the <a href="/adversarial">adversarial test framework</a>.
+      Policy-only, no consensus change. The full mechanism is on the <a href="/design">design page</a>
+      and the drafts are on the <a href="/specs">specs page</a>. The usage split above is computed the
+      same way, by the <code>z_getfeedistribution</code> companion to <code>z_getstandardfee</code>.
     </p>
   </div>
 </section>
 
-<!-- ======== PORTAL ======== -->
+<!-- ======== READ FURTHER ======== -->
 <section id="portal">
   <div class="container">
     <h2>Read further</h2>
     <div class="portal-cards">
+      <a class="portal-card" href="/specs">
+        <h3>Specs</h3>
+        <p>The draft ZIPs: the <code>z_getstandardfee</code> estimator and the ZIP-317 parameter changes.</p>
+        <span class="portal-cta">ZIP drafts &rarr;</span>
+      </a>
       <a class="portal-card" href="/design">
-        <h3>The Design</h3>
-        <p>Three principles, four-layer stack, what we deliberately rejected, and what is still open.</p>
-        <span class="portal-cta">Design rationale &rarr;</span>
+        <h3>Design</h3>
+        <p>The four-layer stack, what was rejected, and the open considerations: multisig, ZIP-218, Crosslink, Tachyon.</p>
+        <span class="portal-cta">Design &amp; considerations &rarr;</span>
       </a>
-      <a class="portal-card" href="/adversarial">
-        <h3>What Could Break This</h3>
-        <p>Adversarial scenarios under simulation. Nine probes, four runtime falsifiers, six test gates.</p>
-        <span class="portal-cta">Falsifiable tests &rarr;</span>
+      <a class="portal-card" href="/research">
+        <h3>Research</h3>
+        <p>The independent analysis and simulation that informs the design, and the people pushing it forward.</p>
+        <span class="portal-cta">Research &amp; credits &rarr;</span>
       </a>
-      <a class="portal-card" href="/interactions">
-        <h3>Interactions</h3>
-        <p>How dynamic fees couple with Crosslink finality and the Network Sustainability Mechanism.</p>
-        <span class="portal-cta">Stack interactions &rarr;</span>
-      </a>
-    </div>
-  </div>
-</section>
-
-<!-- ======== ROADMAP ======== -->
-<section id="roadmap">
-  <div class="container">
-    <h2>Roadmap</h2>
-
-    <div class="timeline">
-      <div class="phase done">
-        <div class="phase-marker"></div>
-        <div class="phase-body">
-          <h3>Phase 1: <code>z_getstandardfees</code></h3>
-          <span class="phase-date">March &ndash; April 2026</span>
-          <p>
-            RPC endpoint that publishes fee data from confirmed blocks. Implemented in
-            Zebra, relayed by Zaino and lightwalletd. The result is what you see above.
-          </p>
-        </div>
-      </div>
-      <div class="phase current">
-        <div class="phase-marker"></div>
-        <div class="phase-body">
-          <h3>Phase 2: Earthquake Tests</h3>
-          <span class="phase-date">May &ndash; August 2026</span>
-          <p>
-            Stress-test under adversarial conditions. Replay harness, wallet developer
-            outreach, relay and mining policy updates. Must pass test gates E2, E3, E4, E7
-            from the <a href="https://shieldedlabs.net/dynamic-fees-roadmap/" target="_blank" rel="noopener">roadmap</a>.
-            See <a href="/adversarial">What Could Break This</a> for the scenario suite.
-          </p>
-        </div>
-      </div>
-      <div class="phase">
-        <div class="phase-marker"></div>
-        <div class="phase-body">
-          <h3>Phase 3: Consensus Building</h3>
-          <span class="phase-date">September 2026 &ndash;</span>
-          <p>
-            Feature-flagged PRs in Zebra, Zaino, and lightwalletd. ZIP advancement to
-            "Proposed" status. Wallet integration. Policy convergence gate E1: &gt;85% for 4 consecutive windows.
-          </p>
-        </div>
-      </div>
-      <div class="phase">
-        <div class="phase-marker"></div>
-        <div class="phase-body">
-          <h3>Phase 4: Extended Research</h3>
-          <span class="phase-date">Ongoing</span>
-          <p>
-            Monitor, iterate, run extended research gates E8&ndash;E12 covering learning
-            robustness, collusion frontier, resource-basis ablation, and controller benchmarks.
-          </p>
-        </div>
-      </div>
     </div>
   </div>
 </section>

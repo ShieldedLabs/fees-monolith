@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Thin relay for the Zcash dynamic fees showcase site.
 
-Serves static files and proxies z_getstandardfees to a local Zebra node.
+Serves static files and proxies z_getstandardfee to a local Zebra node.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from urllib.request import Request, urlopen
 WEB_ROOT = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("FEE_LAB_DATA_DIR", str(WEB_ROOT / "data")))
 HISTORY_FILE = DATA_DIR / "fees.jsonl"
+USAGE_FILE = DATA_DIR / "usage.jsonl"
 SAMPLE_INTERVAL = int(os.environ.get("FEE_LAB_SAMPLE_INTERVAL", "75"))  # ~1 block
 HISTORY_DEFAULT_LIMIT = 1500
 HISTORY_MAX_LIMIT = 5000
@@ -39,6 +40,7 @@ MIME_TYPES = {
     ".png": "image/png",
     ".svg": "image/svg+xml",
     ".ico": "image/x-icon",
+    ".md": "text/plain; charset=utf-8",
     ".pdf": "application/pdf",
     ".txt": "text/plain",
 }
@@ -49,12 +51,12 @@ PRICE_TTL = 300
 
 
 def _sample_loop() -> None:
-    """Poll z_getstandardfees on each new block; append to JSONL history."""
+    """Poll z_getstandardfee on each new block; append to JSONL history."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     last_height: int | None = None
     while True:
         try:
-            response = _zebra_rpc("z_getstandardfees")
+            response = _zebra_rpc("z_getstandardfee")
             data = response.get("result", {})
             height = data.get("height")
             if height is not None and height != last_height:
@@ -68,6 +70,24 @@ def _sample_loop() -> None:
                 }
                 with HISTORY_FILE.open("a") as f:
                     f.write(json.dumps(entry) + "\n")
+
+                # Sample the real-transaction fee distribution for the same block.
+                usage = _zebra_rpc("z_getfeedistribution").get("result", {})
+                usage_entry = {
+                    "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "height": usage.get("height", height),
+                    "total_tx_count": usage.get("total_tx_count"),
+                    "below_standard_count": usage.get("below_standard_count"),
+                    "standard_count": usage.get("standard_count"),
+                    "priority_tx_count": usage.get("priority_tx_count"),
+                    "standard_fee": usage.get("standard_fee"),
+                    "priority_fee": usage.get("priority_fee"),
+                    "distribution": usage.get("distribution"),
+                    "version": usage.get("version"),
+                }
+                with USAGE_FILE.open("a") as f:
+                    f.write(json.dumps(usage_entry) + "\n")
+
                 last_height = height
         except Exception:
             pass  # silent — Zebra may be briefly unreachable
@@ -106,10 +126,14 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/fees":
             self._handle_fees()
+        elif path == "/api/usage":
+            self._handle_usage()
         elif path == "/api/price":
             self._handle_price()
         elif path == "/api/history":
             self._handle_history(parsed.query)
+        elif path == "/api/usage-history":
+            self._handle_usage_history(parsed.query)
         elif path == "/api/history.csv":
             self._handle_history_csv()
         else:
@@ -117,7 +141,19 @@ class Handler(BaseHTTPRequestHandler):
 
     def _handle_fees(self):
         try:
-            result = _zebra_rpc("z_getstandardfees")
+            result = _zebra_rpc("z_getstandardfee")
+            body = json.dumps(result.get("result", result)).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(body)
+        except Exception as exc:
+            self._error(502, str(exc))
+
+    def _handle_usage(self):
+        try:
+            result = _zebra_rpc("z_getfeedistribution")
             body = json.dumps(result.get("result", result)).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -136,11 +172,11 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _read_history(self, limit: int) -> list:
-        if not HISTORY_FILE.exists():
+    def _read_history(self, limit: int, history_file: Path = HISTORY_FILE) -> list:
+        if not history_file.exists():
             return []
         entries: list = []
-        with HISTORY_FILE.open() as f:
+        with history_file.open() as f:
             lines = f.readlines()
         for line in lines[-limit:]:
             try:
@@ -159,6 +195,25 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError:
                     pass
             entries = self._read_history(limit)
+            body = json.dumps({"entries": entries, "count": len(entries)}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(body)
+        except Exception as exc:
+            self._error(500, str(exc))
+
+    def _handle_usage_history(self, query: str):
+        try:
+            params = parse_qs(query)
+            limit = HISTORY_DEFAULT_LIMIT
+            if "limit" in params:
+                try:
+                    limit = max(1, min(HISTORY_MAX_LIMIT, int(params["limit"][0])))
+                except ValueError:
+                    pass
+            entries = self._read_history(limit, USAGE_FILE)
             body = json.dumps({"entries": entries, "count": len(entries)}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")

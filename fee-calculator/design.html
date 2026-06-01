@@ -23,9 +23,9 @@
       </svg>
     </button>
     <nav id="site-nav">
+      <a href="/specs">Specs</a>
       <a href="/design" class="active">Design</a>
-      <a href="/adversarial">Adversarial</a>
-      <a href="/interactions">Interactions</a>
+      <a href="/research">Research</a>
       <a href="https://github.com/ShieldedLabs/fee-playground" target="_blank" rel="noopener">GitHub</a>
     </nav>
   </div>
@@ -37,10 +37,11 @@
     <span class="page-eyebrow">The Design</span>
     <h1>Why the mechanism is shaped this way</h1>
     <p class="page-lead">
-      The dynamic fee mechanism for Zcash is an estimator, not a new consensus rule. It reads recent
-      confirmed blocks, computes an action-weighted median, rounds it to a power of ten, and publishes
-      the result over RPC. Wallets and indexers consume it. Below: why each piece is necessary, the
-      alternatives we considered and rejected, and what remains open.
+      The dynamic fee mechanism for Zcash is an estimator, not a new consensus rule, and not an auction.
+      It reads recent confirmed blocks, computes an action-weighted median, rounds it to a power of ten,
+      and publishes the result over RPC. Wallets and indexers consume it. Below: why each piece is
+      necessary, the alternatives rejected, what is still open, and the forward-looking considerations
+      (multisig, ZIP-218, Crosslink, Tachyon).
     </p>
   </div>
 </section>
@@ -78,7 +79,7 @@
 
     <div class="layer-stack">
       <div class="layer">
-        <div class="layer-meta">Layer 4 &middot; draft consensus &middot; <a href="/interactions#nsm">ZIP-235</a></div>
+        <div class="layer-meta">Layer 4 &middot; draft consensus &middot; <a href="#nsm">ZIP-235</a></div>
         <div class="layer-name">NSM fee burn</div>
         <p>
           The teeth. Removes 60% of transaction fees from circulation permanently and pays 40% to
@@ -91,7 +92,7 @@
         <div class="layer-meta">Layer 3 &middot; draft policy &middot; this site</div>
         <div class="layer-name">Dynamic fee estimation</div>
         <p>
-          The signal. The <code>z_getstandardfees</code> RPC publishes a fee recommendation derived
+          The signal. The <code>z_getstandardfee</code> RPC publishes a fee recommendation derived
           from confirmed blocks. Lookback of 50 blocks, buffered by 5. Slack capacity in each block
           is filled with synthetic floor-fee transactions, so the median responds smoothly when the
           network is quiet. Result is rounded to the nearest power of ten. Two tiers: Standard
@@ -151,7 +152,7 @@
         </div>
         <pre><code id="code-zebra">curl -X POST http://your-node:8232 \
   -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"z_getstandardfees","id":1}'</code></pre>
+  -d '{"jsonrpc":"2.0","method":"z_getstandardfee","id":1}'</code></pre>
       </div>
     </div>
 
@@ -163,7 +164,7 @@
         </div>
         <pre><code id="code-zaino">curl -X POST http://your-zaino:8088 \
   -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"z_getstandardfees","id":1}'</code></pre>
+  -d '{"jsonrpc":"2.0","method":"z_getstandardfee","id":1}'</code></pre>
       </div>
     </div>
 
@@ -174,7 +175,7 @@
           <button class="copy-btn" data-target="code-lwd">Copy</button>
         </div>
         <pre><code id="code-lwd">grpcurl -plaintext your-lightwalletd:9067 \
-  cash.z.wallet.sdk.rpc.CompactTxStreamer/GetStandardFees</code></pre>
+  cash.z.wallet.sdk.rpc.CompactTxStreamer/GetStandardFee</code></pre>
       </div>
     </div>
 
@@ -187,9 +188,8 @@
     </div>
 
     <p class="spec-link">
-      Full ZIP draft on
-      <a href="https://github.com/zcash/zips" target="_blank" rel="noopener">github.com/zcash/zips</a>
-      (<code>zip-draft-dynamic-fees.md</code>).
+      Full draft on the <a href="/specs#zip-estimator">specs page</a>, with the companion
+      <code>z_getfeedistribution</code> method that powers the <a href="/">usage split</a>.
     </p>
   </div>
 </section>
@@ -272,52 +272,51 @@
   </div>
 </section>
 
-<!-- ======== OPEN DESIGN CHOICES (settled by earthquake tests) ======== -->
+<!-- ======== OPEN DESIGN CHOICES (refined from user behavior, optionally) ======== -->
 <section id="open-design">
   <div class="container">
     <h2>Open design choices in v0</h2>
     <p class="section-lead">
       The v0 algorithm above is a <strong>candidate, not a final spec</strong>. Three parameter
-      choices are currently fixed in the implementation but explicitly subject to revision based
-      on Phase 2 outcomes. Each is paired with the falsifier or gate from
-      <a href="/adversarial">the earthquake-test framework</a> that will settle it.
+      choices are currently fixed in the implementation but open to <em>optional</em> refinement
+      &mdash; we'd change them only if observed user behavior warrants it. Independent analysis and
+      simulation help us decide how; see <a href="/research">Further Research</a>.
     </p>
     <div class="open-design-table">
       <div class="open-design-row">
         <div class="open-design-choice">Oracle</div>
         <div class="open-design-current">action-weighted median</div>
         <div class="open-design-alt">median-of-medians (recommended by the nikete audit)</div>
-        <div class="open-design-settled">E4 manipulation bounds + Stability falsifier &middot; tested by MedianPoisoning + MinerSelfDealing scenarios</div>
+        <div class="open-design-settled">audit favors median-of-medians for manipulation resistance &middot; simulator compares both under median-poisoning + miner-self-dealing</div>
       </div>
       <div class="open-design-row">
         <div class="open-design-choice">Floor fee</div>
         <div class="open-design-current">1,000 zats / action <span class="open-design-note">(assumes the marginal-fee reduction draft has shipped)</span></div>
         <div class="open-design-alt">5,000 zats / action <span class="open-design-note">(current ZIP-317 mainnet value)</span></div>
-        <div class="open-design-settled">Anti-spam falsifier &middot; tested by floor_fee_saturation scenario &middot; coupled to the marginal-fee draft's path</div>
+        <div class="open-design-settled">audit notes anti-spam depends on the floor &middot; simulator tests floor saturation &middot; coupled to the marginal-fee draft's path</div>
       </div>
       <div class="open-design-row">
         <div class="open-design-choice">Quantization</div>
         <div class="open-design-current">powers of 10</div>
         <div class="open-design-alt">powers of &radic;10 &middot; continuous-with-dispersion &middot; alternative bucket scales</div>
-        <div class="open-design-settled">Privacy falsifier (bucket-flip timing) &middot; tested by BucketBoundaryNudging scenario</div>
+        <div class="open-design-settled">audit flags bucket-flip timing as a privacy signal &middot; simulator tests bucket-boundary nudging</div>
       </div>
     </div>
     <p class="footnote">
-      When the earthquake tests settle these choices, the <code>z_getstandardfees</code> <code>version</code> field will bump (e.g. <code>v0</code> &rarr; <code>v0.1</code> or <code>v1</code>) and a new <a href="/research/conformance-vectors-v0.json">conformance vectors</a> file will be published.
+      If user-behavior data prompts a refinement, the <code>z_getstandardfee</code> <code>version</code> field will bump (e.g. <code>v0</code> &rarr; <code>v0.1</code> or <code>v1</code>) and a new <a href="/research/conformance-vectors-v0.json">conformance vectors</a> file will be published.
     </p>
 
     <div class="callout callout-data">
-      <strong>Preliminary results from the first sweep (2026-05-09).</strong>
-      Running the four oracle &times; floor variants against five of Mohak's adversarial
-      scenarios on the comparable-median controller gives a first signal:
+      <strong>Exploratory analysis (2026-05-09).</strong>
+      An early oracle &times; floor sweep on Mohak's simulator gives a first signal:
       at <code>floor=1000</code> (the v0 candidate), both oracle types produce identical
-      <code>harm_ratio</code> = 0 across all five scenarios; at <code>floor=5000</code>
+      <code>harm_ratio</code> = 0 across five scenarios; at <code>floor=5000</code>
       (current ZIP-317 mainnet value), <code>action-weighted-median</code> shows
-      <code>harm_ratio = 0.359</code> on the <code>miner_self_dealing</code> scenario while
-      <code>median-of-medians</code> stays at 0. This is one seed across five scenarios &mdash;
-      not a verdict, but a first signal that <strong>oracle and floor are coupled</strong>
-      and the choice we make affects which attack surfaces remain.
-      Full data: <a href="/research/oracle-floor-sweep-2026-05-09.md">sweep summary</a> &middot;
+      <code>harm_ratio = 0.359</code> on the miner-self-dealing scenario while
+      <code>median-of-medians</code> stays at 0. One seed &mdash; not a verdict, but a first
+      signal that <strong>oracle and floor are coupled</strong>. More on
+      <a href="/research#simulation">Further Research</a>; full data:
+      <a href="/research/oracle-floor-sweep-2026-05-09.md">sweep summary</a> &middot;
       <a href="/research/oracle-floor-sweep-2026-05-09.jsonl">JSONL</a>.
     </div>
   </div>
@@ -328,7 +327,7 @@
   <div class="container">
     <h2>Other open questions</h2>
     <p class="section-lead">
-      Beyond the v0 parameter choices, these structural questions remain unresolved and will shape Phase 3 and beyond.
+      Beyond the v0 parameter choices, these structural questions remain unresolved and would shape any future refinement or consensus hardening.
     </p>
     <ul class="open-list">
       <li>
@@ -347,10 +346,115 @@
         commons?
       </li>
       <li>
-        Under what conditions should policy-level rules be promoted to consensus enforcement? Phase 3
-        gate E1 (policy convergence &gt; 85% for 4 windows) is necessary but probably not sufficient.
+        Under what conditions should policy-level rules be promoted to consensus enforcement? Strong,
+        durable policy-level adoption across wallets and miners is necessary but probably not sufficient.
       </li>
     </ul>
+  </div>
+</section>
+
+<!-- ======== FUTURE CONSIDERATIONS ======== -->
+<section id="considerations" class="doc-section">
+  <div class="container">
+    <span class="section-eyebrow">Still being worked out</span>
+    <h2>Future considerations</h2>
+    <p class="section-lead">
+      Questions the estimator surfaces but does not answer. None blocks the rollout; each shapes where
+      the work goes next.
+    </p>
+
+    <p class="zip-subhead">Multisig and short transaction expiry</p>
+    <p>
+      One wallet feature is a short transaction expiry: let a stuck transaction expire quickly and
+      resubmit it at the priority rate. That collides with multisig and threshold signing, where the
+      fee, and the note-commitment anchor, can move while signers coordinate. The blunt interim answer:
+      a multisig wallet should use a <strong>long expiry</strong> and pay the <strong>priority fee</strong>
+      at the last signing. Long expiry covers a slow ceremony; priority absorbs fee drift. Priority and
+      expiry are independent, so paying priority does nothing for a transaction that has already expired:
+      the long expiry is the part that matters here.
+    </p>
+    <p>
+      The residual cost is a privacy one: a long ceremony signs against an old anchor, which is valid but
+      identifying. The real fix is deeper than a fee policy. Signers can authorize the weakest sufficient
+      condition, an intent, rather than one exact transaction, and a recursive proof shows the final
+      transaction satisfies it, assembled later with a fresh anchor and the current fee. That same
+      machinery sidesteps the drawbacks of dedicated post-quantum threshold signatures, and it is the
+      kind of thing <a href="#tachyon">Tachyon</a> makes practical. Tracked as a direction, not a v0
+      feature.
+    </p>
+
+    <p class="zip-subhead">ZIP-218 (shorter block times)</p>
+    <p>
+      ZIP-218 shortens the block interval to roughly 25 seconds. It does not change the estimator's
+      shape, but it rescales two constants: the 5-block reorg buffer should grow (about 3x) to preserve
+      the same wall-clock margin, and synthetic fill, currently sized by bytes, may instead be sized by
+      ZIP-128 action limits. The short-expiry feature also lengthens in block terms: a 2-minute window is
+      about 2 blocks today and roughly 5 under ZIP-218. ZIP-218 has not shipped as of this writing.
+    </p>
+  </div>
+</section>
+
+<!-- ======== ALLOCATION ======== -->
+<section id="separation" class="doc-section">
+  <div class="container">
+    <span class="section-eyebrow">What dynamic fees do not decide</span>
+    <h2>Where the money goes is a separate question</h2>
+    <p>
+      The estimator sets the <em>total</em> fee level from observed congestion. How that revenue is
+      allocated across roles, miners today and finalizers under Crosslink, is a separate policy concern.
+      The separation is deliberate: congestion pricing can evolve independently from fee-splitting policy.
+    </p>
+  </div>
+</section>
+
+<!-- ======== CROSSLINK ======== -->
+<section id="crosslink" class="doc-section">
+  <div class="container">
+    <h2>Crosslink</h2>
+    <p class="section-lead">Hybrid PoW/PoS finality without replacing Proof-of-Work.</p>
+    <p>
+      Crosslink adds a Proof-of-Stake finality layer on top of Zcash's existing Proof-of-Work chain. A
+      sidecar daemon runs BFT consensus and produces finality certificates that wallets and explorers can
+      show alongside the usual confirmations. The fee interaction is allocation-only: Crosslink introduces
+      a new role, finalizers, that must be paid to sustain the BFT layer. Dynamic fees set the total level
+      from congestion; a future ZIP defines the split between miners and finalizers. The two designs are
+      orthogonal, and the finalizer share depends on how Crosslink's validator economics land.
+    </p>
+  </div>
+</section>
+
+<!-- ======== NSM ======== -->
+<section id="nsm" class="doc-section">
+  <div class="container">
+    <h2>NSM: ZIP-235</h2>
+    <p class="section-lead">The Network Sustainability Mechanism. Burns 60% of transaction fees, pays miners 40%.</p>
+    <p>
+      ZIP-235 removes 60% of transaction fee revenue from circulation permanently and pays 40% to the
+      block's miner. The 60/40 split is calibrated against a security argument: a split more favorable to
+      miners would give them a rollback incentive, since the direct miner share is fully theirs while the
+      burn benefits them only in proportion to future hashrate. The interaction with dynamic fees is
+      amplification: as the estimator raises the level during sustained congestion, the burn scales with
+      it, so inducing congestion becomes permanently expensive. This is the "teeth" of the design. The
+      marginal-fee reduction (5,000 to 1,000) and this burn must stay compatible, so the minimum fee stays
+      divisible by the 60/40 split; see the <a href="/specs#zip-marginal">specs</a>.
+    </p>
+  </div>
+</section>
+
+<!-- ======== TACHYON ======== -->
+<section id="tachyon" class="doc-section">
+  <div class="container">
+    <h2>Tachyon</h2>
+    <p class="section-lead">Privacy-preserving wallet sync, still in research.</p>
+    <p>
+      Tachyon is oblivious synchronization infrastructure that scales wallet sync without leaking what a
+      wallet is looking for. It has no ZIP yet. If it ships with relay-style incentives, dynamic fees
+      would need to allocate a share of revenue to sync infrastructure, analogous to the Crosslink
+      finalizer role. It also reframes the estimator at scale: if capacity becomes abundant, the
+      congestion-pricing function mostly goes dormant and the floor becomes the dominant market. And the
+      same recursive-proof machinery is what makes the intent-based multisig fix above practical.
+      Specifics await design work.
+    </p>
   </div>
 </section>
 

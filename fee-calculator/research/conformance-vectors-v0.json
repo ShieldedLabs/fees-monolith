@@ -1,17 +1,17 @@
 {
   "estimator_version": "v0",
-  "candidate_status": "v0 reference candidate as of 2026-05-09. Subject to revision based on Phase 2 earthquake test outcomes. See README for the open design choices that may change.",
+  "candidate_status": "v0 reference candidate as of 2026-05-09. Subject to optional refinement based on observed user behavior. See README for the open design choices that may change.",
   "spec_url": "https://zips.z.cash/zip-XXXX#fee-estimator-v0",
   "generated_at": "2026-05-09T21:00:00Z",
-  "scope": "These vectors verify that an indexer's relay (lightwalletd, zaino) returns the same response as the canonical Zebra at the same chain tip. They do NOT evaluate whether v0's parameter choices (oracle type, floor value, quantization scheme) are the right ones — see README and the /adversarial page on the site.",
+  "scope": "These vectors verify that an indexer's relay (lightwalletd, zaino) returns the same response as the canonical Zebra at the same chain tip. They do NOT evaluate whether v0's parameter choices (oracle type, floor value, quantization scheme) are the right ones — see README and the Further Research page (/research) on the site.",
   "verification_workflow": [
     "1. Sync any Zcash full node + indexer pair to mainnet.",
     "2. Wait until the network is at any chain tip height H.",
-    "3. Call z_getstandardfees against both the reference Zebra and your indexer simultaneously.",
+    "3. Call z_getstandardfee against both the reference Zebra and your indexer simultaneously.",
     "4. Compare. Both responses must have identical standard_fee, priority_fee, congested, version, and height fields.",
     "5. The how_is_this_calculated field may differ in URI form but must point to the same v0 specification."
   ],
-  "verification_command": "curl -s -X POST http://YOUR_NODE:8232 -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"method\":\"z_getstandardfees\",\"id\":1}' | jq '.result'",
+  "verification_command": "curl -s -X POST http://YOUR_NODE:8232 -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"method\":\"z_getstandardfee\",\"id\":1}' | jq '.result'",
   "v0_invariants": {
     "priority_fee_relation": "priority_fee MUST equal standard_fee × priority_multiplier (10 in v0)",
     "standard_fee_floor": "standard_fee MUST be at least the floor parameter (currently 1000 in v0; this floor value is itself an open design choice — see README)",
@@ -20,28 +20,28 @@
     "congested_flag_semantics": "congested MUST be true iff the total synthetic-fill count across the lookback window is zero (every block was full)"
   },
   "open_design_choices": {
-    "_note": "These choices are currently fixed in v0 as shipped, but are explicitly subject to change based on Phase 2 earthquake-test outcomes.",
+    "_note": "These choices are currently fixed in v0 as shipped, but are open to optional refinement based on observed user behavior.",
     "oracle_type": {
       "current_v0": "action_weighted_median",
       "alternative": "median_of_medians (recommended by the nikete audit)",
-      "settled_by": "E4 manipulation bounds + Stability falsifier + Mohak's MedianPoisoning + MinerSelfDealing scenarios"
+      "informed_by": "audit favors median-of-medians for manipulation resistance; simulator compares both under median-poisoning + miner-self-dealing"
     },
     "floor_fee": {
       "current_v0": 1000,
       "alternative": 5000,
       "current_v0_assumes": "the marginal-fee reduction draft (5000 → 1000) has shipped on mainnet",
-      "settled_by": "F1 anti-spam falsifier + Mohak's floor_fee_saturation scenario + the marginal-fee draft's compatibility analysis"
+      "informed_by": "audit notes anti-spam depends on the floor; simulator tests floor saturation; coupled to the marginal-fee draft's path"
     },
     "quantization": {
       "current_v0": "powers_of_10",
       "alternatives": ["powers_of_sqrt10", "continuous_with_dispersion", "alternative_bucket_scales"],
-      "settled_by": "F4 privacy falsifier (bucket-flip timing) + Mohak's BucketBoundaryNudging scenario"
+      "informed_by": "audit flags bucket-flip timing as a privacy signal; simulator tests bucket-boundary nudging"
     }
   },
   "captured_responses": [
     {
       "captured_at": "2026-05-09T21:00:00Z",
-      "captured_from": "ShieldedLabs/zebra-dynamic-fees branch aphelionz/z_getstandardfees, post-priority-rename",
+      "captured_from": "ShieldedLabs/zebra-dynamic-fees branch aphelionz/z_getstandardfee, post-priority-rename",
       "network": "Mainnet",
       "tip_height": 3336771,
       "response": {
@@ -59,6 +59,6 @@
     "Add synthetic test vectors: mock block sequences with deterministic expected outputs, enabling unit-test conformance verification of any v0 implementation independent of mainnet state.",
     "Add congested-state captures from historical periods of full blocks.",
     "Add programmatic verifier (Rust binary or Python script) automating real-time comparison.",
-    "Republish vectors when v0 design choices are settled by Phase 2 outcomes (likely versioned as v0.1, v0.2, or v1)."
+    "Republish vectors if v0 design choices are refined based on observed usage (likely versioned as v0.1, v0.2, or v1)."
   ]
 }
