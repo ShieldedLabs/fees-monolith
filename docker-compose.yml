@@ -1,6 +1,6 @@
-# Dynamic Fees — Zaino + lightwalletd with z_getstandardfees
+# Dynamic Fees — Zaino + lightwalletd with z_getstandardfee
 #
-# Both indexers proxy fee estimation to zebrad's native z_getstandardfees RPC.
+# Both indexers proxy fee estimation to zebrad's native z_getstandardfee RPC.
 # Assumes zebrad is running on the zcash_default Docker network.
 #
 # Usage:
@@ -10,11 +10,11 @@
 #   # Zaino JSON-RPC:
 #   curl -X POST http://127.0.0.1:18088 \
 #     -H "Content-Type: application/json" \
-#     -d '{"jsonrpc":"2.0","method":"z_getstandardfees","id":1}'
+#     -d '{"jsonrpc":"2.0","method":"z_getstandardfee","id":1}'
 #
 #   # lightwalletd gRPC:
 #   grpcurl -plaintext localhost:19067 \
-#     cash.z.wallet.sdk.rpc.CompactTxStreamer/GetStandardFees
+#     cash.z.wallet.sdk.rpc.CompactTxStreamer/GetStandardFee
 
 services:
   zaino-fees:
@@ -37,7 +37,7 @@ services:
     command: ["start", "--config", "/etc/zaino/zainod.toml"]
     ports:
       - "18137:8137"  # gRPC
-      - "18088:8088"  # JSON-RPC (z_getstandardfees)
+      - "18088:8088"  # JSON-RPC (z_getstandardfee)
 
   lightwalletd-fees:
     build:
@@ -55,7 +55,7 @@ services:
       - ./config/zcash.conf:/etc/lightwalletd/zcash.conf:ro
       - lwd-fees-cache:/var/lib/lightwalletd/db
     ports:
-      - "19067:9067"  # gRPC (GetStandardFees)
+      - "19067:9067"  # gRPC (GetStandardFee)
 
 networks:
   default:
