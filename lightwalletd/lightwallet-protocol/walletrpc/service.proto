@@ -335,7 +335,7 @@ service CompactTxStreamer {
     // Testing-only, requires lightwalletd --ping-very-insecure (do not enable in production)
     rpc Ping(Duration) returns (PingResponse) {}
     // Return the recommended standard and priority fees based on recent block data.
-    // Proxies to the full node's z_getstandardfees JSON-RPC method.
-    rpc GetStandardFees(Empty) returns (StandardFeesResponse) {}
+    // Proxies to the full node's z_getstandardfee JSON-RPC method.
+    rpc GetStandardFee(Empty) returns (StandardFeesResponse) {}
 
 }

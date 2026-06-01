@@ -442,9 +442,9 @@ func (s *lwdStreamer) GetLightdInfo(ctx context.Context, in *walletrpc.Empty) (*
 	return lightdinfo, err
 }
 
-// GetStandardFees proxies the z_getstandardfees JSON-RPC call to the full node.
-func (s *lwdStreamer) GetStandardFees(ctx context.Context, in *walletrpc.Empty) (*walletrpc.StandardFeesResponse, error) {
-	result, rpcErr := common.RawRequest("z_getstandardfees", []json.RawMessage{})
+// GetStandardFee proxies the z_getstandardfee JSON-RPC call to the full node.
+func (s *lwdStreamer) GetStandardFee(ctx context.Context, in *walletrpc.Empty) (*walletrpc.StandardFeesResponse, error) {
+	result, rpcErr := common.RawRequest("z_getstandardfee", []json.RawMessage{})
 	if rpcErr != nil {
 		return nil, rpcErr
 	}

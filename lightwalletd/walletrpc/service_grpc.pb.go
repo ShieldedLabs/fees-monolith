@@ -43,7 +43,7 @@ const (
 	CompactTxStreamer_GetAddressUtxosStream_FullMethodName    = "/cash.z.wallet.sdk.rpc.CompactTxStreamer/GetAddressUtxosStream"
 	CompactTxStreamer_GetLightdInfo_FullMethodName            = "/cash.z.wallet.sdk.rpc.CompactTxStreamer/GetLightdInfo"
 	CompactTxStreamer_Ping_FullMethodName                     = "/cash.z.wallet.sdk.rpc.CompactTxStreamer/Ping"
-	CompactTxStreamer_GetStandardFees_FullMethodName          = "/cash.z.wallet.sdk.rpc.CompactTxStreamer/GetStandardFees"
+	CompactTxStreamer_GetStandardFee_FullMethodName          = "/cash.z.wallet.sdk.rpc.CompactTxStreamer/GetStandardFee"
 )
 
 // CompactTxStreamerClient is the client API for CompactTxStreamer service.
@@ -137,8 +137,8 @@ type CompactTxStreamerClient interface {
 	// Testing-only, requires lightwalletd --ping-very-insecure (do not enable in production)
 	Ping(ctx context.Context, in *Duration, opts ...grpc.CallOption) (*PingResponse, error)
 	// Return the recommended standard and priority fees based on recent block data.
-	// Proxies to the full node's z_getstandardfees JSON-RPC method.
-	GetStandardFees(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*StandardFeesResponse, error)
+	// Proxies to the full node's z_getstandardfee JSON-RPC method.
+	GetStandardFee(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*StandardFeesResponse, error)
 }
 
 type compactTxStreamerClient struct {
@@ -540,9 +540,9 @@ func (c *compactTxStreamerClient) Ping(ctx context.Context, in *Duration, opts .
 	return out, nil
 }
 
-func (c *compactTxStreamerClient) GetStandardFees(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*StandardFeesResponse, error) {
+func (c *compactTxStreamerClient) GetStandardFee(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*StandardFeesResponse, error) {
 	out := new(StandardFeesResponse)
-	err := c.cc.Invoke(ctx, CompactTxStreamer_GetStandardFees_FullMethodName, in, out, opts...)
+	err := c.cc.Invoke(ctx, CompactTxStreamer_GetStandardFee_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -640,8 +640,8 @@ type CompactTxStreamerServer interface {
 	// Testing-only, requires lightwalletd --ping-very-insecure (do not enable in production)
 	Ping(context.Context, *Duration) (*PingResponse, error)
 	// Return the recommended standard and priority fees based on recent block data.
-	// Proxies to the full node's z_getstandardfees JSON-RPC method.
-	GetStandardFees(context.Context, *Empty) (*StandardFeesResponse, error)
+	// Proxies to the full node's z_getstandardfee JSON-RPC method.
+	GetStandardFee(context.Context, *Empty) (*StandardFeesResponse, error)
 	mustEmbedUnimplementedCompactTxStreamerServer()
 }
 
@@ -709,8 +709,8 @@ func (UnimplementedCompactTxStreamerServer) GetLightdInfo(context.Context, *Empt
 func (UnimplementedCompactTxStreamerServer) Ping(context.Context, *Duration) (*PingResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Ping not implemented")
 }
-func (UnimplementedCompactTxStreamerServer) GetStandardFees(context.Context, *Empty) (*StandardFeesResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetStandardFees not implemented")
+func (UnimplementedCompactTxStreamerServer) GetStandardFee(context.Context, *Empty) (*StandardFeesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetStandardFee not implemented")
 }
 func (UnimplementedCompactTxStreamerServer) mustEmbedUnimplementedCompactTxStreamerServer() {}
 
@@ -1117,20 +1117,20 @@ func _CompactTxStreamer_Ping_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
-func _CompactTxStreamer_GetStandardFees_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _CompactTxStreamer_GetStandardFee_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(Empty)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(CompactTxStreamerServer).GetStandardFees(ctx, in)
+		return srv.(CompactTxStreamerServer).GetStandardFee(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: CompactTxStreamer_GetStandardFees_FullMethodName,
+		FullMethod: CompactTxStreamer_GetStandardFee_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CompactTxStreamerServer).GetStandardFees(ctx, req.(*Empty))
+		return srv.(CompactTxStreamerServer).GetStandardFee(ctx, req.(*Empty))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1187,8 +1187,8 @@ var CompactTxStreamer_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _CompactTxStreamer_Ping_Handler,
 		},
 		{
-			MethodName: "GetStandardFees",
-			Handler:    _CompactTxStreamer_GetStandardFees_Handler,
+			MethodName: "GetStandardFee",
+			Handler:    _CompactTxStreamer_GetStandardFee_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

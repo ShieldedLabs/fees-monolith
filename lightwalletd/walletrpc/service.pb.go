@@ -1993,7 +1993,7 @@ var file_service_proto_depIdxs = []int32{
 	20, // 25: cash.z.wallet.sdk.rpc.CompactTxStreamer.GetAddressUtxosStream:input_type -> cash.z.wallet.sdk.rpc.GetAddressUtxosArg
 	8,  // 26: cash.z.wallet.sdk.rpc.CompactTxStreamer.GetLightdInfo:input_type -> cash.z.wallet.sdk.rpc.Empty
 	11, // 27: cash.z.wallet.sdk.rpc.CompactTxStreamer.Ping:input_type -> cash.z.wallet.sdk.rpc.Duration
-	8,  // 28: cash.z.wallet.sdk.rpc.CompactTxStreamer.GetStandardFees:input_type -> cash.z.wallet.sdk.rpc.Empty
+	8,  // 28: cash.z.wallet.sdk.rpc.CompactTxStreamer.GetStandardFee:input_type -> cash.z.wallet.sdk.rpc.Empty
 	2,  // 29: cash.z.wallet.sdk.rpc.CompactTxStreamer.GetLatestBlock:output_type -> cash.z.wallet.sdk.rpc.BlockID
 	24, // 30: cash.z.wallet.sdk.rpc.CompactTxStreamer.GetBlock:output_type -> cash.z.wallet.sdk.rpc.CompactBlock
 	24, // 31: cash.z.wallet.sdk.rpc.CompactTxStreamer.GetBlockNullifiers:output_type -> cash.z.wallet.sdk.rpc.CompactBlock
@@ -2014,7 +2014,7 @@ var file_service_proto_depIdxs = []int32{
 	21, // 46: cash.z.wallet.sdk.rpc.CompactTxStreamer.GetAddressUtxosStream:output_type -> cash.z.wallet.sdk.rpc.GetAddressUtxosReply
 	9,  // 47: cash.z.wallet.sdk.rpc.CompactTxStreamer.GetLightdInfo:output_type -> cash.z.wallet.sdk.rpc.LightdInfo
 	12, // 48: cash.z.wallet.sdk.rpc.CompactTxStreamer.Ping:output_type -> cash.z.wallet.sdk.rpc.PingResponse
-	23, // 49: cash.z.wallet.sdk.rpc.CompactTxStreamer.GetStandardFees:output_type -> cash.z.wallet.sdk.rpc.StandardFeesResponse
+	23, // 49: cash.z.wallet.sdk.rpc.CompactTxStreamer.GetStandardFee:output_type -> cash.z.wallet.sdk.rpc.StandardFeesResponse
 	29, // [29:50] is the sub-list for method output_type
 	8,  // [8:29] is the sub-list for method input_type
 	8,  // [8:8] is the sub-list for extension type_name
