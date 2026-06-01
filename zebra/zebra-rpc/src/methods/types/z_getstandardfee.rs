@@ -1,11 +1,11 @@
-//! Types for the `z_getstandardfees` RPC.
+//! Types for the `z_getstandardfee` RPC.
 
 use derive_getters::Getters;
 use derive_new::new;
 
-/// A response to a `z_getstandardfees` RPC request.
+/// A response to a `z_getstandardfee` RPC request.
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize, Getters, new)]
-pub struct ZGetStandardFeesResponse {
+pub struct ZGetStandardFeeResponse {
     /// Recommended fee per logical action, in zatoshis.
     #[getter(copy)]
     pub(crate) standard_fee: u64,

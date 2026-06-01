@@ -134,7 +134,8 @@ use types::{
     transaction::TransactionObject,
     unified_address::ZListUnifiedReceiversResponse,
     validate_address::ValidateAddressResponse,
-    z_getstandardfees::ZGetStandardFeesResponse,
+    z_getfeedistribution::ZGetFeeDistributionResponse,
+    z_getstandardfee::ZGetStandardFeeResponse,
     z_validate_address::ZValidateAddressResponse,
 };
 
@@ -637,8 +638,18 @@ pub trait Rpc {
     ///
     /// method: post
     /// tags: fees
-    #[method(name = "z_getstandardfees")]
-    async fn z_getstandardfees(&self) -> Result<ZGetStandardFeesResponse>;
+    #[method(name = "z_getstandardfee")]
+    async fn z_getstandardfee(&self) -> Result<ZGetStandardFeeResponse>;
+
+    /// Returns how the per-action fees paid by real transactions in the
+    /// estimator lookback window split across the standard and priority tiers,
+    /// with a powers-of-10 histogram. Synthetic fill is excluded, so the figures
+    /// describe actual on-chain usage.
+    ///
+    /// method: post
+    /// tags: fees
+    #[method(name = "z_getfeedistribution")]
+    async fn z_getfeedistribution(&self) -> Result<ZGetFeeDistributionResponse>;
 
     /// Checks if a zcash address of type P2PKH, P2SH, TEX, SAPLING or UNIFIED is valid.
     /// Returns information about the given address if valid.
@@ -2800,177 +2811,72 @@ where
         validate_address(network, raw_address)
     }
 
-    async fn z_getstandardfees(&self) -> Result<ZGetStandardFeesResponse> {
-        use zebra_chain::serialization::ZcashSerialize;
-
-        const REORG_BUFFER: u32 = 5;
-        const LOOKBACK_WINDOW: u32 = 50;
-        const PRIORITY_MULTIPLIER: u64 = 10;
-        const FLOOR_FEE: u64 = 1000;
-        const BLOCK_CAPACITY: u64 = 2_000_000;
-        const GRACE_ACTIONS: u64 = 2;
-        const ZIP_317_CONVENTIONAL_FEE: u64 = 5000;
-        const NOT_ENOUGH_BLOCKS: &str = "not enough blocks to calculate median fee";
-        const BLOCK_NOT_FOUND: &str = "block not found while calculating median fee";
+    async fn z_getstandardfee(&self) -> Result<ZGetStandardFeeResponse> {
         const SPEC_URL: &str = "https://zips.z.cash/zip-XXXX#fee-estimator-v0";
 
         let tip_height = best_chain_tip_height(&self.latest_chain_tip)?;
         let tip_u64 = tip_height.0 as u64;
 
-        let end_height = tip_height
-            .0
-            .checked_sub(REORG_BUFFER)
-            .ok_or_misc_error(NOT_ENOUGH_BLOCKS)?;
-
-        let start_height = end_height
-            .checked_sub(LOOKBACK_WINDOW - 1)
-            .ok_or_misc_error(NOT_ENOUGH_BLOCKS)?;
-
         let mut read_state = self.read_state.clone();
-        let mut tx_cache: HashMap<transaction::Hash, (Arc<Transaction>, block::Height)> =
-            HashMap::new();
+        let block_fees = scan_fee_window(&mut read_state, tip_height).await?;
+        let (standard_fee, priority_fee, congested) = compute_standard_fee(&block_fees);
 
-        // Per-block: (per_action_fees for real txs, block_size, tx_sizes for avg computation)
-        struct BlockFees {
-            per_action_fees: Vec<u64>,
-            block_size: u64,
-            tx_sizes: Vec<u64>,
-        }
-
-        let mut block_fees: Vec<BlockFees> = Vec::new();
-
-        for height in start_height..=end_height {
-            let request =
-                ReadRequest::BlockAndSize(HashOrHeight::Height(block::Height(height)));
-            let response = read_state
-                .ready()
-                .and_then(|service| service.call(request))
-                .await
-                .map_error(server::error::LegacyCode::default())?;
-
-            let (block, block_size) = match response {
-                ReadResponse::BlockAndSize(Some((block, size))) => (block, size as u64),
-                ReadResponse::BlockAndSize(None) => {
-                    return Err(ErrorObject::borrowed(
-                        server::error::LegacyCode::Misc.into(),
-                        BLOCK_NOT_FOUND,
-                        None,
-                    ))
-                }
-                _ => unreachable!("unmatched response to a block_and_size request"),
-            };
-
-            let mut block_outputs: HashMap<transparent::OutPoint, transparent::Output> =
-                HashMap::new();
-            let mut fees = BlockFees {
-                per_action_fees: Vec::new(),
-                block_size,
-                tx_sizes: Vec::new(),
-            };
-
-            for transaction in &block.transactions {
-                if !transaction.is_coinbase() {
-                    let fee = calculate_transaction_fee(
-                        &mut read_state,
-                        &mut tx_cache,
-                        transaction,
-                        &block_outputs,
-                    )
-                    .await?;
-
-                    if let Some(fee) = fee {
-                        let actions = transaction::zip317::conventional_actions(transaction) as u64;
-                        let effective_actions = GRACE_ACTIONS.max(actions);
-                        let fee_per_action = fee.zatoshis() as u64 / effective_actions;
-                        fees.per_action_fees.push(fee_per_action);
-
-                        let tx_size = transaction
-                            .zcash_serialize_to_vec()
-                            .map(|v| v.len() as u64)
-                            .unwrap_or(0);
-                        fees.tx_sizes.push(tx_size);
-                    }
-                }
-
-                let tx_hash = transaction.hash();
-                for (index, output) in transaction.outputs().iter().enumerate() {
-                    let outpoint = transparent::OutPoint::from_usize(tx_hash, index);
-                    block_outputs.insert(outpoint, output.clone());
-                }
-            }
-
-            block_fees.push(fees);
-        }
-
-        // Collect all tx sizes and fees across the window
-        let total_tx_count: usize = block_fees.iter().map(|b| b.tx_sizes.len()).sum();
-
-        if total_tx_count == 0 {
-            return Ok(ZGetStandardFeesResponse::new(
-                ZIP_317_CONVENTIONAL_FEE,
-                ZIP_317_CONVENTIONAL_FEE.saturating_mul(PRIORITY_MULTIPLIER),
-                false,
-                "v0".to_string(),
-                tip_u64,
-                SPEC_URL.to_string(),
-            ));
-        }
-
-        let total_tx_bytes: u64 = block_fees
-            .iter()
-            .flat_map(|b| b.tx_sizes.iter())
-            .sum();
-        let avg_tx_size = (total_tx_bytes / total_tx_count as u64).max(1);
-
-        // Build fee multiset: real fees + synthetic fills
-        let mut fee_multiset: Vec<u64> = Vec::new();
-        let mut total_synthetic_count: u64 = 0;
-
-        for bf in &block_fees {
-            fee_multiset.extend_from_slice(&bf.per_action_fees);
-
-            let unused_bytes = BLOCK_CAPACITY.saturating_sub(bf.block_size);
-            let synthetic_count = unused_bytes / avg_tx_size;
-            total_synthetic_count += synthetic_count;
-
-            for _ in 0..synthetic_count {
-                fee_multiset.push(FLOOR_FEE);
-            }
-        }
-
-        if fee_multiset.is_empty() {
-            return Ok(ZGetStandardFeesResponse::new(
-                ZIP_317_CONVENTIONAL_FEE,
-                ZIP_317_CONVENTIONAL_FEE.saturating_mul(PRIORITY_MULTIPLIER),
-                false,
-                "v0".to_string(),
-                tip_u64,
-                SPEC_URL.to_string(),
-            ));
-        }
-
-        // Sort and compute median
-        fee_multiset.sort_unstable();
-        let len = fee_multiset.len();
-        let raw_median = if len % 2 == 1 {
-            fee_multiset[len / 2]
-        } else {
-            (fee_multiset[len / 2 - 1] + fee_multiset[len / 2]) / 2
-        };
-
-        let bucketed = bucket_fee_power_of_10(raw_median);
-        let standard_fee = FLOOR_FEE.max(bucketed);
-
-        // Priority fee is always 10× standard. Congestion is signaled separately:
-        // it indicates whether paying priority actually buys faster inclusion
-        // (true when all blocks in the lookback window were full).
-        let priority_fee = standard_fee.saturating_mul(PRIORITY_MULTIPLIER);
-        let congested = total_synthetic_count == 0;
-
-        Ok(ZGetStandardFeesResponse::new(
+        Ok(ZGetStandardFeeResponse::new(
             standard_fee,
             priority_fee,
             congested,
+            "v0".to_string(),
+            tip_u64,
+            SPEC_URL.to_string(),
+        ))
+    }
+
+    async fn z_getfeedistribution(&self) -> Result<ZGetFeeDistributionResponse> {
+        use std::collections::BTreeMap;
+
+        const SPEC_URL: &str = "https://zips.z.cash/zip-XXXX#fee-estimator-v0";
+
+        let tip_height = best_chain_tip_height(&self.latest_chain_tip)?;
+        let tip_u64 = tip_height.0 as u64;
+
+        let mut read_state = self.read_state.clone();
+        let block_fees = scan_fee_window(&mut read_state, tip_height).await?;
+        let (standard_fee, priority_fee, _congested) = compute_standard_fee(&block_fees);
+
+        // Classify only real (mined, non-coinbase) transactions, excluding the
+        // synthetic floor-fee fill the estimator uses, so the split describes
+        // actual on-chain usage.
+        let mut total_tx_count: u64 = 0;
+        let mut below_standard_count: u64 = 0;
+        let mut standard_count: u64 = 0;
+        let mut priority_tx_count: u64 = 0;
+        let mut distribution: BTreeMap<u64, u64> = BTreeMap::new();
+
+        for bf in &block_fees {
+            for &fee_per_action in &bf.per_action_fees {
+                total_tx_count += 1;
+                *distribution
+                    .entry(bucket_fee_power_of_10(fee_per_action))
+                    .or_default() += 1;
+
+                if fee_per_action >= priority_fee {
+                    priority_tx_count += 1;
+                } else if fee_per_action >= standard_fee {
+                    standard_count += 1;
+                } else {
+                    below_standard_count += 1;
+                }
+            }
+        }
+
+        Ok(ZGetFeeDistributionResponse::new(
+            standard_fee,
+            priority_fee,
+            total_tx_count,
+            below_standard_count,
+            standard_count,
+            priority_tx_count,
+            distribution,
             "v0".to_string(),
             tip_u64,
             SPEC_URL.to_string(),
@@ -3379,6 +3285,167 @@ where
     latest_chain_tip
         .best_tip_height()
         .ok_or_misc_error("No blocks in state")
+}
+
+/// Per-block fee data gathered while scanning the estimator lookback window:
+/// the per-action fees of real (non-coinbase) transactions, the block size, and
+/// each real transaction's serialized size (used to size the synthetic fill).
+struct BlockFees {
+    per_action_fees: Vec<u64>,
+    block_size: u64,
+    tx_sizes: Vec<u64>,
+}
+
+/// Scans the fee-estimator lookback window ending `REORG_BUFFER` blocks below
+/// `tip_height`, returning per-block real-transaction fee data. Shared by
+/// `z_getstandardfee` and `z_getfeedistribution` so the block walk lives in one
+/// place.
+async fn scan_fee_window<S>(read_state: &mut S, tip_height: block::Height) -> Result<Vec<BlockFees>>
+where
+    S: ReadStateService,
+{
+    use zebra_chain::serialization::ZcashSerialize;
+
+    const REORG_BUFFER: u32 = 5;
+    const LOOKBACK_WINDOW: u32 = 50;
+    const GRACE_ACTIONS: u64 = 2;
+    const NOT_ENOUGH_BLOCKS: &str = "not enough blocks to calculate median fee";
+    const BLOCK_NOT_FOUND: &str = "block not found while calculating median fee";
+
+    let end_height = tip_height
+        .0
+        .checked_sub(REORG_BUFFER)
+        .ok_or_misc_error(NOT_ENOUGH_BLOCKS)?;
+
+    let start_height = end_height
+        .checked_sub(LOOKBACK_WINDOW - 1)
+        .ok_or_misc_error(NOT_ENOUGH_BLOCKS)?;
+
+    let mut tx_cache: HashMap<transaction::Hash, (Arc<Transaction>, block::Height)> =
+        HashMap::new();
+    let mut block_fees: Vec<BlockFees> = Vec::new();
+
+    for height in start_height..=end_height {
+        let request = ReadRequest::BlockAndSize(HashOrHeight::Height(block::Height(height)));
+        let response = read_state
+            .ready()
+            .and_then(|service| service.call(request))
+            .await
+            .map_error(server::error::LegacyCode::default())?;
+
+        let (block, block_size) = match response {
+            ReadResponse::BlockAndSize(Some((block, size))) => (block, size as u64),
+            ReadResponse::BlockAndSize(None) => {
+                return Err(ErrorObject::borrowed(
+                    server::error::LegacyCode::Misc.into(),
+                    BLOCK_NOT_FOUND,
+                    None,
+                ))
+            }
+            _ => unreachable!("unmatched response to a block_and_size request"),
+        };
+
+        let mut block_outputs: HashMap<transparent::OutPoint, transparent::Output> = HashMap::new();
+        let mut fees = BlockFees {
+            per_action_fees: Vec::new(),
+            block_size,
+            tx_sizes: Vec::new(),
+        };
+
+        for transaction in &block.transactions {
+            if !transaction.is_coinbase() {
+                let fee = calculate_transaction_fee(
+                    read_state,
+                    &mut tx_cache,
+                    transaction,
+                    &block_outputs,
+                )
+                .await?;
+
+                if let Some(fee) = fee {
+                    let actions = transaction::zip317::conventional_actions(transaction) as u64;
+                    let effective_actions = GRACE_ACTIONS.max(actions);
+                    let fee_per_action = fee.zatoshis() as u64 / effective_actions;
+                    fees.per_action_fees.push(fee_per_action);
+
+                    let tx_size = transaction
+                        .zcash_serialize_to_vec()
+                        .map(|v| v.len() as u64)
+                        .unwrap_or(0);
+                    fees.tx_sizes.push(tx_size);
+                }
+            }
+
+            let tx_hash = transaction.hash();
+            for (index, output) in transaction.outputs().iter().enumerate() {
+                let outpoint = transparent::OutPoint::from_usize(tx_hash, index);
+                block_outputs.insert(outpoint, output.clone());
+            }
+        }
+
+        block_fees.push(fees);
+    }
+
+    Ok(block_fees)
+}
+
+/// Computes the standard fee, priority fee, and congestion flag from scanned
+/// window data, applying synthetic floor-fee fill and powers-of-10 bucketing.
+/// Returns the ZIP-317 conventional-fee fallback when the window has no real
+/// transactions.
+fn compute_standard_fee(block_fees: &[BlockFees]) -> (u64, u64, bool) {
+    const PRIORITY_MULTIPLIER: u64 = 10;
+    const FLOOR_FEE: u64 = 1000;
+    const BLOCK_CAPACITY: u64 = 2_000_000;
+    const ZIP_317_CONVENTIONAL_FEE: u64 = 5000;
+
+    let fallback = (
+        ZIP_317_CONVENTIONAL_FEE,
+        ZIP_317_CONVENTIONAL_FEE.saturating_mul(PRIORITY_MULTIPLIER),
+        false,
+    );
+
+    let total_tx_count: usize = block_fees.iter().map(|b| b.tx_sizes.len()).sum();
+    if total_tx_count == 0 {
+        return fallback;
+    }
+
+    let total_tx_bytes: u64 = block_fees.iter().flat_map(|b| b.tx_sizes.iter()).sum();
+    let avg_tx_size = (total_tx_bytes / total_tx_count as u64).max(1);
+
+    let mut fee_multiset: Vec<u64> = Vec::new();
+    let mut total_synthetic_count: u64 = 0;
+
+    for bf in block_fees {
+        fee_multiset.extend_from_slice(&bf.per_action_fees);
+
+        let unused_bytes = BLOCK_CAPACITY.saturating_sub(bf.block_size);
+        let synthetic_count = unused_bytes / avg_tx_size;
+        total_synthetic_count += synthetic_count;
+
+        for _ in 0..synthetic_count {
+            fee_multiset.push(FLOOR_FEE);
+        }
+    }
+
+    if fee_multiset.is_empty() {
+        return fallback;
+    }
+
+    fee_multiset.sort_unstable();
+    let len = fee_multiset.len();
+    let raw_median = if len % 2 == 1 {
+        fee_multiset[len / 2]
+    } else {
+        (fee_multiset[len / 2 - 1] + fee_multiset[len / 2]) / 2
+    };
+
+    let bucketed = bucket_fee_power_of_10(raw_median);
+    let standard_fee = FLOOR_FEE.max(bucketed);
+    let priority_fee = standard_fee.saturating_mul(PRIORITY_MULTIPLIER);
+    let congested = total_synthetic_count == 0;
+
+    (standard_fee, priority_fee, congested)
 }
 
 pub(crate) fn bucket_fee_power_of_10(value: u64) -> u64 {

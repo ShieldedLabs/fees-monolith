@@ -14,6 +14,7 @@ pub mod subsidy;
 pub mod transaction;
 pub mod unified_address;
 pub mod validate_address;
-pub mod z_getstandardfees;
+pub mod z_getfeedistribution;
+pub mod z_getstandardfee;
 pub mod z_validate_address;
 pub mod zec;

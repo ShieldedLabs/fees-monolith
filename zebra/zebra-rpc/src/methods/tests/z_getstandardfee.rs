@@ -1,4 +1,4 @@
-//! Tests for the `z_getstandardfees` RPC.
+//! Tests for the `z_getstandardfee` RPC.
 
 use std::{collections::HashMap, sync::Arc};
 
@@ -44,7 +44,7 @@ fn make_block_with_size(
 
 fn make_coinbase_tx(height: u32, value_zats: i64) -> Arc<Transaction> {
     let input = transparent::Input::new_coinbase(Height(height), vec![], None);
-    let output = transparent::Output::new_coinbase(
+    let output = transparent::Output::new(
         Amount::<NonNegative>::new(value_zats),
         transparent::Script::new(&[]),
     );
@@ -76,7 +76,7 @@ fn make_spend_tx(prev_tx: &Transaction, output_value_zats: i64) -> Arc<Transacti
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn z_getstandardfees_happy_path() {
+async fn z_getstandardfee_happy_path() {
     let _init_guard = zebra_test::init();
 
     let mut mempool: MockService<_, _, _, BoxError> = MockService::build().for_unit_tests();
@@ -104,7 +104,7 @@ async fn z_getstandardfees_happy_path() {
         None,
     );
 
-    let rpc_future = tokio::spawn(async move { rpc.z_getstandardfees().await });
+    let rpc_future = tokio::spawn(async move { rpc.z_getstandardfee().await });
 
     let header = Arc::new(block_header().0);
     let base_value = 10_000;
@@ -142,7 +142,82 @@ async fn z_getstandardfees_happy_path() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn z_getstandardfees_not_enough_blocks_end_underflow() {
+async fn z_getfeedistribution_happy_path() {
+    let _init_guard = zebra_test::init();
+
+    let mut mempool: MockService<_, _, _, BoxError> = MockService::build().for_unit_tests();
+    let mut state: MockService<_, _, _, BoxError> = MockService::build().for_unit_tests();
+    let mut read_state: MockService<_, _, _, BoxError> = MockService::build().for_unit_tests();
+
+    let (chain_tip, chain_tip_sender) = MockChainTip::new();
+    chain_tip_sender.send_best_tip_height(Height(55));
+
+    let (_tx, rx) = tokio::sync::watch::channel(None);
+    let (rpc, rpc_tx_queue) = RpcImpl::new(
+        Mainnet,
+        Default::default(),
+        Default::default(),
+        "0.0.1",
+        "RPC test",
+        Buffer::new(mempool.clone(), 1),
+        Buffer::new(state.clone(), 1),
+        Buffer::new(read_state.clone(), 1),
+        MockService::build().for_unit_tests(),
+        MockSyncStatus::default(),
+        chain_tip,
+        MockAddressBookPeers::default(),
+        rx,
+        None,
+    );
+
+    let rpc_future = tokio::spawn(async move { rpc.z_getfeedistribution().await });
+
+    let header = Arc::new(block_header().0);
+    let base_value = 10_000;
+
+    for height in 1u32..=50u32 {
+        let fee_zats = i64::from(height) * 2;
+        let (block, block_size) = make_block_with_size(height, base_value, fee_zats, &header);
+
+        let request = ReadRequest::BlockAndSize(HashOrHeight::Height(Height(height)));
+        read_state
+            .expect_request(request)
+            .await
+            .respond(ReadResponse::BlockAndSize(Some((block, block_size))));
+    }
+
+    let response = rpc_future
+        .await
+        .expect("rpc task should not panic")
+        .expect("rpc should succeed");
+
+    // Same estimator output as z_getstandardfee over this window.
+    assert_eq!(response.standard_fee, 1000);
+    assert_eq!(response.priority_fee, 10_000);
+    assert_eq!(response.version, "v0");
+    assert_eq!(response.height, 55);
+
+    // One real (non-coinbase) tx per block, each paying a tiny fee far below the
+    // 1000-zat floor, so every real tx lands in the below-standard tier and none
+    // in the standard or priority tiers.
+    assert_eq!(response.total_tx_count, 50);
+    assert_eq!(response.below_standard_count, 50);
+    assert_eq!(response.standard_count, 0);
+    assert_eq!(response.priority_tx_count, 0);
+
+    // The histogram counts exactly the real transactions, with no synthetic fill.
+    let counted: u64 = response.distribution.values().sum();
+    assert_eq!(counted, 50);
+
+    mempool.expect_no_requests().await;
+    state.expect_no_requests().await;
+    read_state.expect_no_requests().await;
+
+    assert!(rpc_tx_queue.now_or_never().is_none());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn z_getstandardfee_not_enough_blocks_end_underflow() {
     let _init_guard = zebra_test::init();
 
     let mut mempool: MockService<_, _, _, BoxError> = MockService::build().for_unit_tests();
@@ -171,7 +246,7 @@ async fn z_getstandardfees_not_enough_blocks_end_underflow() {
     );
 
     let error = rpc
-        .z_getstandardfees()
+        .z_getstandardfee()
         .await
         .expect_err("expected not enough blocks error");
 
@@ -186,7 +261,7 @@ async fn z_getstandardfees_not_enough_blocks_end_underflow() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn z_getstandardfees_not_enough_blocks_start_underflow() {
+async fn z_getstandardfee_not_enough_blocks_start_underflow() {
     let _init_guard = zebra_test::init();
 
     let mut mempool: MockService<_, _, _, BoxError> = MockService::build().for_unit_tests();
@@ -215,7 +290,7 @@ async fn z_getstandardfees_not_enough_blocks_start_underflow() {
     );
 
     let error = rpc
-        .z_getstandardfees()
+        .z_getstandardfee()
         .await
         .expect_err("expected not enough blocks error");
 
@@ -230,7 +305,7 @@ async fn z_getstandardfees_not_enough_blocks_start_underflow() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn z_getstandardfees_no_chain_tip() {
+async fn z_getstandardfee_no_chain_tip() {
     let _init_guard = zebra_test::init();
 
     let mut mempool: MockService<_, _, _, BoxError> = MockService::build().for_unit_tests();
@@ -258,7 +333,7 @@ async fn z_getstandardfees_no_chain_tip() {
     );
 
     let error = rpc
-        .z_getstandardfees()
+        .z_getstandardfee()
         .await
         .expect_err("expected no chain tip error");
 
@@ -273,7 +348,7 @@ async fn z_getstandardfees_no_chain_tip() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn z_getstandardfees_block_not_found() {
+async fn z_getstandardfee_block_not_found() {
     let _init_guard = zebra_test::init();
 
     let mut mempool: MockService<_, _, _, BoxError> = MockService::build().for_unit_tests();
@@ -301,7 +376,7 @@ async fn z_getstandardfees_block_not_found() {
         None,
     );
 
-    let rpc_future = tokio::spawn(async move { rpc.z_getstandardfees().await });
+    let rpc_future = tokio::spawn(async move { rpc.z_getstandardfee().await });
 
     let request = ReadRequest::BlockAndSize(HashOrHeight::Height(Height(1)));
     read_state
