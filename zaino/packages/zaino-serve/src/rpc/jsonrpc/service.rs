@@ -472,8 +472,8 @@ pub trait ZcashIndexerRpc {
     ///
     /// method: post
     /// tags: blockchain
-    #[method(name = "z_getstandardfees")]
-    async fn z_get_standard_fees(
+    #[method(name = "z_getstandardfee")]
+    async fn z_get_standard_fee(
         &self,
     ) -> Result<zaino_state::fee_estimator::StandardFeesResponse, ErrorObjectOwned>;
 }
@@ -939,12 +939,12 @@ impl<Indexer: ZcashIndexer + LightWalletIndexer> ZcashIndexerRpcServer for JsonR
             })
     }
 
-    async fn z_get_standard_fees(
+    async fn z_get_standard_fee(
         &self,
     ) -> Result<zaino_state::fee_estimator::StandardFeesResponse, ErrorObjectOwned> {
         self.service_subscriber
             .inner_ref()
-            .z_get_standard_fees()
+            .z_get_standard_fee()
             .await
             .map_err(|e| {
                 ErrorObjectOwned::owned(

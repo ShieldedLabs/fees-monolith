@@ -582,7 +582,7 @@ pub trait ZcashIndexer: Send + Sync + 'static {
     ///
     /// method: post
     /// tags: blockchain
-    async fn z_get_standard_fees(
+    async fn z_get_standard_fee(
         &self,
     ) -> Result<crate::fee_estimator::StandardFeesResponse, Self::Error>;
 

@@ -1791,11 +1791,11 @@ impl ZcashIndexer for StateServiceSubscriber {
             .map_err(|e| StateServiceError::Custom(e.to_string()))
     }
 
-    async fn z_get_standard_fees(
+    async fn z_get_standard_fee(
         &self,
     ) -> Result<crate::fee_estimator::StandardFeesResponse, Self::Error> {
         Err(StateServiceError::Custom(
-            "z_get_standard_fees is not yet implemented for the state backend".to_string(),
+            "z_get_standard_fee is not yet implemented for the state backend".to_string(),
         ))
     }
 

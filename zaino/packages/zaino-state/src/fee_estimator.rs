@@ -1,4 +1,4 @@
-//! Fee Estimator v0 — types and algorithm for the `z_getstandardfees` RPC.
+//! Fee Estimator v0 — types and algorithm for the `z_getstandardfee` RPC.
 //!
 //! The canonical fee estimation algorithm now lives in zebrad. This module
 //! provides the response type (used by Zaino's proxy endpoint) and the
@@ -19,7 +19,7 @@ const ZIP_317_CONVENTIONAL_FEE: u64 = 5000;
 /// ZIP 317 grace actions — minimum logical actions for fee computation.
 const GRACE_ACTIONS: u64 = 2;
 
-/// Response type for the `z_getstandardfees` RPC method.
+/// Response type for the `z_getstandardfee` RPC method.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct StandardFeesResponse {
     /// Recommended fee per logical action, in zatoshis.

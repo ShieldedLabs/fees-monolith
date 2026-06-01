@@ -643,7 +643,7 @@ impl JsonRpSeeConnector {
     /// Send a generic JSON-RPC request and deserialize the response.
     ///
     /// Useful for calling RPC methods that don't have a dedicated wrapper
-    /// (e.g. our z_getstandardfees relay).
+    /// (e.g. our z_getstandardfee relay).
     pub async fn json_rpc<R>(
         &self,
         method: &str,

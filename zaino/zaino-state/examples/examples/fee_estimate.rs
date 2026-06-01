@@ -70,7 +70,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let result = estimator.compute(&blocks, tip_height);
 
-    println!("\n=== z_getstandardfees ===");
+    println!("\n=== z_getstandardfee ===");
     println!("{}", serde_json::to_string_pretty(&result)?);
 
     Ok(())
