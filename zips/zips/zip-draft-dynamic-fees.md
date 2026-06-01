@@ -1,5 +1,5 @@
     ZIP: Unassigned
-    Title: Dynamic Fee Estimation via z_getstandardfees
+    Title: Dynamic Fee Estimation via z_getstandardfee
     Owners: Mark Henderson <mark@shieldedlabs.net>
     Status: Draft
     Category: Standards / RPC
@@ -24,12 +24,12 @@ The term "zatoshi" is defined as in the Zcash protocol specification.
 
 # Abstract
 
-This ZIP specifies `z_getstandardfees`, an RPC endpoint served by indexers
-(e.g. Zaino, lightwalletd) that publishes a dynamic fee recommendation derived
-from confirmed blocks. The computation runs entirely at the indexer layer -- no
-changes to full node software (e.g. Zebra) are required. The recommendation is
-observational: it reflects what the network has recently accepted, not what it
-will accept in the future. No service-level guarantees are made or implied.
+This ZIP specifies `z_getstandardfee`, a full node RPC endpoint (computed by
+the full node, e.g. Zebra) that publishes a dynamic fee recommendation derived
+from confirmed blocks. Indexers (e.g. Zaino, lightwalletd) relay the result to
+wallets over gRPC. The recommendation is observational: it reflects what the
+network has recently accepted, not what it will accept in the future. No
+service-level guarantees are made or implied.
 
 
 # Motivation
@@ -42,14 +42,14 @@ downward during periods of low demand, or upward during congestion.
 
 A dynamic fee recommendation, computed from public on-chain data, allows
 wallets to suggest fees that reflect current network conditions. By publishing
-the recommendation through a standard indexer RPC endpoint, all wallets and
+the recommendation through a standard full node RPC endpoint, all wallets and
 services can converge on the same fee signal, reducing fee entropy and
 improving privacy.
 
 This ZIP does not propose consensus changes. It defines an RPC interface and a
-reference fee estimation algorithm (Fee Estimator v0) that indexers compute
-from confirmed block data and expose to connected wallets as a policy
-recommendation. No full node changes are required.
+reference fee estimation algorithm (Fee Estimator v0) that the full node
+computes from confirmed block data and exposes via RPC; indexers relay the
+result to connected wallets as a policy recommendation.
 
 
 # Privacy Implications
@@ -88,94 +88,62 @@ This endpoint is observational. Specifically:
 
 1. A returned `standard_fee` is not a guarantee of inclusion in any block.
 2. The endpoint does not constitute a service-level agreement between the
-   indexer and the wallet.
+   wallet and the user.
 3. The fee recommendation reflects recent confirmed history. It does not
    predict future miner behavior.
 
 
 # Status
 
-This ZIP defines a **v0 reference candidate** for `z_getstandardfees`. The algorithm
+This ZIP defines a **v0 reference candidate** for `z_getstandardfee`. The algorithm
 parameters specified below are currently fixed in the canonical Zebra implementation,
-but at least three choices are explicitly subject to revision based on Phase 2
-"earthquake test" outcomes:
+but at least three choices are open to **optional refinement** &mdash; they would change
+only if observed user behavior warrants it. Independent analysis and simulation inform
+how:
 
-- **Oracle:** v0 uses an action-weighted median; the nikete mechanism-design audit
-  recommends median-of-medians. To be settled by gate E4 (manipulation bounds) plus the
-  Stability falsifier, tested under the MedianPoisoning and MinerSelfDealing scenarios.
+- **Oracle:** v0 uses an action-weighted median; median-of-medians has been proposed
+  as a more manipulation-resistant alternative. Adversarial simulation compares both
+  under median-poisoning and miner-self-dealing strategies.
 - **Floor fee:** v0 uses 1,000 zats per action, which assumes the marginal-fee reduction
   draft (5,000 → 1,000) has shipped on mainnet. Until that draft lands, the operative
-  floor on mainnet is 5,000.
+  floor on mainnet is 5,000. Anti-spam resilience depends on the floor.
 - **Quantization:** v0 uses powers-of-10 bucketing. Alternatives (powers of √10,
-  continuous-with-dispersion, alternative bucket scales) are under consideration; to be
-  settled by the Privacy falsifier under the BucketBoundaryNudging scenario.
+  continuous-with-dispersion, alternative bucket scales) are under consideration;
+  coarse-bucket flip timing is a potential privacy signal.
 
-Implementations of v0 should match the algorithm below exactly. When Phase 2 settles a
-choice, the `version` field will bump (e.g. `v0` → `v0.1`, `v1`) and a new conformance
-vectors file will be published.
+Implementations of v0 should match the algorithm below exactly. If user-behavior data
+prompts a refinement to any of these choices, the `version` field will increment (e.g.
+0 → 1) and a new conformance vectors file will be published.
 
-Preliminary sweep results (2026-05-09) and the Phase 2 framework are documented at
-[fees.shieldedinfra.net/adversarial](https://fees.shieldedinfra.net/adversarial) and
+Exploratory sweep results (2026-05-09) and the supporting analysis are documented at
 [fees.shieldedinfra.net/research/](https://fees.shieldedinfra.net/research/).
 
 # Specification
 
 ## RPC Method
 
-`z_getstandardfees`
+`z_getstandardfee`
 
 Parameters: None.
 
 Result: A JSON object with the following fields:
 
-| Field                    | Type    | Required | Description                                                                 |
-|--------------------------|---------|----------|-----------------------------------------------------------------------------|
-| `standard_fee`           | integer | Yes      | Recommended fee per logical action, in zatoshis.                            |
-| `priority_fee`           | integer | Yes      | Priority fee per logical action, in zatoshis. Always equal to `standard_fee` × `priority_multiplier`. |
-| `congested`              | boolean | Yes      | `true` when the network is congested (paying priority buys faster inclusion). |
-| `version`                | string  | Yes      | Estimator version identifier (e.g. `"v0"`).                                |
-| `height`                 | integer | Yes      | The chain tip height at the time of computation.                            |
-| `how_is_this_calculated` | string  | Yes      | URI pointing to the estimator specification.                                |
+| Field          | Type    | Required | Description                                       |
+|----------------|---------|----------|---------------------------------------------------|
+| `standard_fee` | integer | Yes      | Recommended fee per logical action, in zatoshis.  |
+| `version`      | integer | Yes      | Estimator version identifier (e.g. `0`).          |
+| `height`       | integer | Yes      | The chain tip height at the time of computation.  |
 
 
-### Example Response (uncongested)
+### Example Response
 
 ```json
 {
   "standard_fee": 1000,
-  "priority_fee": 10000,
-  "congested": false,
-  "version": "v0",
-  "height": 2750000,
-  "how_is_this_calculated": "https://zips.z.cash/zip-XXXX#fee-estimator-v0"
+  "version": 0,
+  "height": 2750000
 }
 ```
-
-### Example Response (congested)
-
-```json
-{
-  "standard_fee": 10000,
-  "priority_fee": 100000,
-  "congested": true,
-  "version": "v0",
-  "height": 2750000,
-  "how_is_this_calculated": "https://zips.z.cash/zip-XXXX#fee-estimator-v0"
-}
-```
-
-### Reserved Fields
-
-The following fields are reserved for future estimator versions.
-Implementations MUST NOT include them until a future ZIP or estimator revision
-defines their semantics.
-
-- `tiers` -- structured fee tier data
-- `floor_fee` -- the minimum enforceable fee floor
-- `window` -- lookback window metadata (block heights, buffer size)
-- `dispersion` -- fee volatility / "fee weather" indicator
-- `health` -- diagnostic flags (under-sampled, high variance, suspected
-  manipulation)
 
 ### Wallet Integration
 
@@ -188,21 +156,20 @@ ability to override.
 
 ## Fee Estimator v0
 
-This section defines the reference algorithm for computing `standard_fee`,
-`priority_fee`, and `congested`. Implementations MUST produce identical outputs
-for the same chain state when using the same estimator version. Conformance is
-verified by published test vectors (see [Test Vectors](#test-vectors)).
+This section defines the reference algorithm for computing `standard_fee`.
+Implementations MUST produce identical outputs for the same chain state when
+using the same estimator version. Conformance is verified by published test
+vectors (see [Test Vectors](#test-vectors)).
 
 
 ### Parameters
 
-| Parameter            | Value | Description                                                    |
-|----------------------|-------|----------------------------------------------------------------|
-| B                    | 50    | Lookback window size in blocks                                 |
-| b                    | 5     | Chain-tip buffer in blocks                                     |
-| floor                | 1,000 | Synthetic transaction fee per action, in zatoshis              |
-| block_capacity       | 2 MB  | Maximum block size for synthetic fill computation              |
-| priority_multiplier  | 10    | Multiplier applied to `standard_fee` for the priority tier     |
+| Parameter      | Value | Description                                                        |
+|----------------|-------|--------------------------------------------------------------------|
+| B              | 50    | Lookback window size in blocks                                     |
+| b              | 5     | Chain-tip buffer in blocks (3× longer if ZIP 218 ships, see below) |
+| floor          | 1,000 | Synthetic transaction fee per action, in zatoshis                 |
+| block_capacity | 2 MB  | Maximum block size for synthetic fill computation                 |
 
 
 ### Lookback Window
@@ -243,8 +210,13 @@ with synthetic transactions:
 If a block contains no non-coinbase transactions, use `avg_tx_size` from the
 remaining blocks in *L*. If no block in *L* contains non-coinbase
 transactions, the estimator SHOULD return the current ZIP 317 conventional fee
-as `standard_fee`, the corresponding `priority_fee` (= `standard_fee` ×
-`priority_multiplier`), and `congested` = `false`.
+as `standard_fee`.
+
+> [!note]
+> **Interaction with ZIP 218.** Synthetic fill is currently sized by bytes
+> (`block_capacity` / `avg_tx_size`). If ZIP 218 ships, synthetic fill MAY
+> instead be sized by ZIP 128 action limits, modeling unused capacity in
+> actions rather than bytes. ZIP 218 has not shipped as of this draft.
 
 
 ### Median Computation
@@ -266,23 +238,6 @@ Round the raw median to the nearest power of 10:
 The `standard_fee` is max(*floor*, *bucketed*).
 
 
-### Priority Fee and Congestion Detection
-
-The `priority_fee` is always present in the response and is computed as:
-
-> `priority_fee` = `standard_fee` × `priority_multiplier`
-
-Wallets MAY surface this as a higher-priority option for users who want faster
-inclusion when the network is busy. Whether paying the priority fee actually
-buys faster inclusion is signaled by the separate `congested` flag.
-
-The `congested` flag is `true` when real transactions have displaced all
-synthetic transactions from the lookback window -- formally, when the total
-synthetic count across all blocks in *L* is zero (every block in the window is
-full). When `congested` is `false`, both tiers see equivalent inclusion times,
-and paying `priority_fee` does not buy meaningfully faster confirmation.
-
-
 ## Estimator Versioning
 
 The `version` field identifies which algorithm produced the result. This
@@ -293,37 +248,64 @@ allows:
 - Gradual migration: indexers can support multiple versions during transitions.
 
 When the estimator algorithm changes (parameters, formula, or structure), the
-`version` string MUST change. The recommended convention is `"v0"`, `"v1"`,
+`version` integer MUST change. Versions increment monotonically: `0`, `1`,
 etc.
 
-Indexers MAY support a `version` parameter on the RPC call to request a
-specific estimator. If unsupported or unrecognized, the indexer SHOULD return
+Indexers MAY relay a `version` parameter on the RPC call to request a
+specific estimator. If unsupported or unrecognized, the full node SHOULD return
 the default (latest) version.
 
 
-## Indexer Implementation
+## Heuristics
 
-The fee estimator is computed by the indexer, not the full node. This means:
+The `standard_fee` answers "what should I pay?" It does not answer "what does
+paying more, or less, reveal about me?" That second question matters: the
+per-transaction privacy cost of deviating from the common fee is not uniform.
+A user in a time window where almost nobody pays a higher "priority" fee leaks
+far more by paying it than a user in a window where priority payment is common --
+the same one-bit choice is much more identifying in the sparse case.
 
-1. The indexer MUST have access to confirmed block data for at least *B* + *b*
-   blocks behind the current tip. Indexers already maintain this data for
-   wallet serving.
-2. The indexer MUST recompute the estimate when the indexed tip advances.
-   Caching the result per tip height is RECOMMENDED to avoid redundant
-   computation across concurrent wallet requests.
-3. If the indexer's indexed tip lags the full node's tip by more than *b*
-   blocks, the estimator output may be stale. Indexers SHOULD include the
-   `height` field so wallets can detect staleness.
+This generalizes to a single observable: the **anonymity set of a fee choice**.
+For a given fee level, that is the number of confirmed logical actions in the
+lookback window that paid the same fee. A fee shared by many recent actions
+blends in; one shared by few stands out. This is the rigorous form of the
+intuition above, and -- like `standard_fee` itself -- it is derived entirely
+from confirmed block data and is observational: it characterizes the window just
+past, not the block into which a transaction will actually be mined.
 
-The algorithm is defined portably: any implementation with access to confirmed
-block data can compute it. Full nodes, alternative indexers, or offline tooling
-MAY implement the same algorithm independently. Conformance is verified by test
-vectors, not by implementation location.
+The aim of this section is to sketch, not to specify, the heuristics a future
+estimator version could expose so wallets can give users an informed view of the
+privacy impact of a fee choice *before* they send. Any such heuristic would be
+returned as one or more additional fields on `z_getstandardfee`, gated behind a
+future `version`; v0 returns none of them. The candidate signals below are all
+views of the same anonymity-set quantity:
 
-Wallets that obtain fee data through an indexer should be aware of the trust
-implications described in the Zcash Wallet App Threat Model. [^wallet-threat-model]
-The indexer computes the fee recommendation from the same confirmed block data
-it already serves to wallets; the incremental trust surface is minimal.
+- **Tier occupancy.** For each fee level in use (at minimum `standard_fee` and
+  any higher "priority" levels), how many recent actions paid it -- so a wallet
+  can warn when a chosen tier is sparsely populated, and therefore identifying.
+- **Congestion.** Whether organic transactions have displaced synthetic fill
+  across the window (every block full), indicating whether paying above
+  `standard_fee` actually buys faster inclusion rather than only a larger fee
+  footprint.
+- **Dispersion.** A coarse summary of how spread out fee choices currently are
+  ("fee weather"), conveying at a glance whether the network has converged on a
+  single fee or fragmented across many.
+
+A returned heuristic is itself a disclosure. A fine-grained fee distribution
+could help an adversary model the network, or coach a user toward a deceptively
+"safe" fee that an attacker has anticipated. A future ZIP specifying these fields
+must weigh their resolution against that risk, keep them coarse by default, and
+publish exact derivations and conformance vectors before any wallet relies on
+them. None of this is normative here.
+
+### UX framing: the "Priority" lane
+
+When wallets surface a faster-but-pricier option, the suggested label is
+**"Priority"** and the suggested metaphor is **airport security**: during normal
+operation both the standard and priority lanes move quickly, and priority is
+meaningfully faster *only* during congestion. Framing it this way sets the
+correct expectation -- most of the time priority buys nothing but a larger fee
+footprint -- and pairs naturally with the privacy guidance above.
 
 
 ## Test Vectors
@@ -332,7 +314,7 @@ Published test vectors consist of:
 
 1. A chain slice: an ordered sequence of blocks with their full transaction
    data.
-2. The expected `z_getstandardfees` output for that slice under each estimator
+2. The expected `z_getstandardfee` output for that slice under each estimator
    version.
 
 Conformance requirement: given the same chain slice, all implementations using
@@ -382,6 +364,9 @@ Reorgs at the chain tip are common (1-2 blocks). The buffer ensures the
 estimator is not recomputed on data that may be rolled back. A 5-block buffer
 (~6 minutes) provides margin against typical reorg depths without introducing
 excessive latency.
+
+If ZIP 218 ships and shortens the block interval, *b* should be roughly tripled
+(to ~15 blocks) to preserve the same wall-clock margin against reorgs.
 
 ## Interaction with node relay policy
 
@@ -439,27 +424,28 @@ from predictable fee behavior and reduced orphan risk from oversized mempools.
 
 # Deployment
 
-## Phase 1: Indexer (Policy-only)
+## Phase 1: Full node + indexer relay (Policy-only)
 
-Indexers implementing `z_getstandardfees` should deploy the endpoint as an
-informational RPC call. No full node changes, consensus changes, or relay
-policy changes are required.
+The full node (e.g. Zebra) computes `z_getstandardfee` and exposes it as an
+informational RPC call. Indexers relay the result to wallets: Zaino re-exposes
+the JSON-RPC method, and lightwalletd exposes it over gRPC. No consensus changes
+or relay policy changes are required.
 
-The reference implementation targets Zaino. Other indexers (e.g. lightwalletd)
-may implement the same algorithm using the published test vectors for
-conformance.
+The reference implementation targets Zebra, with relay support in Zaino and
+lightwalletd. Conformance across implementations is verified by the published
+test vectors.
 
 ## Phase 2: Wallet Adoption
 
-Wallets should begin using `z_getstandardfees` to inform fee selection UX.
+Wallets should begin using `z_getstandardfee` to inform fee selection UX.
 
-## Future: Full Node and Consensus
+## Future: Consensus
 
 If a future ZIP proposes relay policy changes or consensus-level fee rules
 (e.g. mandatory bucketing, fee floors, or expiry height constraints), those
-rules will be specified in a separate ZIP. Such a ZIP may move the fee
-estimator into the full node, or may continue to rely on the indexer
-computation defined here.
+rules will be specified in a separate ZIP. Such a ZIP may make the estimator's
+output consensus-relevant, or may continue to treat it as the policy
+recommendation defined here.
 
 
 # Open issues
@@ -469,10 +455,11 @@ computation defined here.
 - Test vector sets are TBD. At minimum, vectors should cover: an empty window,
   an all-synthetic window, a congestion threshold boundary, a bucketing
   boundary, and a window with mixed fee levels.
-- The `how_is_this_calculated` URI contains a placeholder (`zip-XXXX`) pending
-  ZIP number assignment.
-- Reference implementation status and links (Zaino, Zebra) should be added
-  when available.
+- The Heuristics section is a sketch, not a specification. The exact derivations,
+  field shapes, and conformance vectors for any returned heuristic must be
+  defined before a wallet relies on them.
+- Reference implementation status and links (Zebra, Zaino, lightwalletd) should
+  be added when available.
 - Whether the estimator should account for the
   `BLOCK_UNPAID_ACTION_LIMIT` divergence between Zebra (0) and the ZIP 317
   spec (50), or whether this is purely a relay policy concern outside the
@@ -490,7 +477,5 @@ computation defined here.
 [^zip-0317]: [ZIP 317: Proportional Transfer Fee Mechanism](zip-0317)
 
 [^zip-0401]: [ZIP 401: Addressing Mempool Denial-of-Service](zip-0401)
-
-[^wallet-threat-model]: [Zcash Wallet App Threat Model](https://zcash.readthedocs.io/en/latest/rtd_pages/wallet_threat_model.html)
 
 [^dynamic-fees-lab]: [Zcash Dynamic Fees Lab](https://github.com/ShieldedLabs/fee-playground)
