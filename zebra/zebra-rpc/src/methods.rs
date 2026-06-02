@@ -134,7 +134,7 @@ use types::{
     transaction::TransactionObject,
     unified_address::ZListUnifiedReceiversResponse,
     validate_address::ValidateAddressResponse,
-    z_getfeedistribution::ZGetFeeDistributionResponse,
+    z_getfeedistribution::{FeeSample, ZGetFeeDistributionResponse},
     z_getstandardfee::ZGetStandardFeeResponse,
     z_validate_address::ZValidateAddressResponse,
 };
@@ -2843,28 +2843,38 @@ where
         let block_fees = scan_fee_window(&mut read_state, tip_height).await?;
         let (standard_fee, priority_fee, _congested) = compute_standard_fee(&block_fees);
 
-        // Classify only real (mined, non-coinbase) transactions, excluding the
-        // synthetic floor-fee fill the estimator uses, so the split describes
-        // actual on-chain usage.
+        // Classify each real (mined, non-coinbase) transaction by fee per action
+        // against the current fee lanes: standard = the ZIP-317 conventional fee
+        // (5000), priority = exactly 4x (20000), nonstandard = anything else.
+        // Synthetic fill is excluded, so this describes actual on-chain usage.
+        const STANDARD_LANE: u64 = 5000;
+        const PRIORITY_LANE: u64 = 20000;
+        const MAX_SAMPLES: usize = 2000;
+
         let mut total_tx_count: u64 = 0;
-        let mut below_standard_count: u64 = 0;
         let mut standard_count: u64 = 0;
-        let mut priority_tx_count: u64 = 0;
+        let mut priority_count: u64 = 0;
+        let mut nonstandard_count: u64 = 0;
         let mut distribution: BTreeMap<u64, u64> = BTreeMap::new();
+        let mut transactions: Vec<FeeSample> = Vec::new();
 
         for bf in &block_fees {
-            for &fee_per_action in &bf.per_action_fees {
+            for sample in &bf.samples {
                 total_tx_count += 1;
                 *distribution
-                    .entry(bucket_fee_power_of_10(fee_per_action))
+                    .entry(bucket_fee_alphabet(sample.fee_per_action))
                     .or_default() += 1;
 
-                if fee_per_action >= priority_fee {
-                    priority_tx_count += 1;
-                } else if fee_per_action >= standard_fee {
+                if sample.fee_per_action == PRIORITY_LANE {
+                    priority_count += 1;
+                } else if sample.fee_per_action == STANDARD_LANE {
                     standard_count += 1;
                 } else {
-                    below_standard_count += 1;
+                    nonstandard_count += 1;
+                }
+
+                if transactions.len() < MAX_SAMPLES {
+                    transactions.push(sample.clone());
                 }
             }
         }
@@ -2873,10 +2883,11 @@ where
             standard_fee,
             priority_fee,
             total_tx_count,
-            below_standard_count,
             standard_count,
-            priority_tx_count,
+            priority_count,
+            nonstandard_count,
             distribution,
+            transactions,
             "v0".to_string(),
             tip_u64,
             SPEC_URL.to_string(),
@@ -3292,6 +3303,7 @@ where
 /// each real transaction's serialized size (used to size the synthetic fill).
 struct BlockFees {
     per_action_fees: Vec<u64>,
+    samples: Vec<FeeSample>,
     block_size: u64,
     tx_sizes: Vec<u64>,
 }
@@ -3348,6 +3360,7 @@ where
         let mut block_outputs: HashMap<transparent::OutPoint, transparent::Output> = HashMap::new();
         let mut fees = BlockFees {
             per_action_fees: Vec::new(),
+            samples: Vec::new(),
             block_size,
             tx_sizes: Vec::new(),
         };
@@ -3365,8 +3378,15 @@ where
                 if let Some(fee) = fee {
                     let actions = transaction::zip317::conventional_actions(transaction) as u64;
                     let effective_actions = GRACE_ACTIONS.max(actions);
-                    let fee_per_action = fee.zatoshis() as u64 / effective_actions;
+                    let fee_zats = fee.zatoshis() as u64;
+                    let fee_per_action = fee_zats / effective_actions;
                     fees.per_action_fees.push(fee_per_action);
+                    fees.samples.push(FeeSample {
+                        txid: transaction.hash().to_string(),
+                        fee: fee_zats,
+                        actions,
+                        fee_per_action,
+                    });
 
                     let tx_size = transaction
                         .zcash_serialize_to_vec()
@@ -3394,8 +3414,11 @@ where
 /// Returns the ZIP-317 conventional-fee fallback when the window has no real
 /// transactions.
 fn compute_standard_fee(block_fees: &[BlockFees]) -> (u64, u64, bool) {
-    const PRIORITY_MULTIPLIER: u64 = 10;
-    const FLOOR_FEE: u64 = 1000;
+    // Current mainnet ZIP-317 params: 5000-zat marginal fee and a 4x priority
+    // lane (the weight-ratio cap). The fee alphabet is 5000 * 4^n. These move to
+    // 1000 / 10x / powers-of-10 once the marginal-fee reduction ships.
+    const PRIORITY_MULTIPLIER: u64 = 4;
+    const FLOOR_FEE: u64 = 5000;
     const BLOCK_CAPACITY: u64 = 2_000_000;
     const ZIP_317_CONVENTIONAL_FEE: u64 = 5000;
 
@@ -3423,9 +3446,7 @@ fn compute_standard_fee(block_fees: &[BlockFees]) -> (u64, u64, bool) {
         let synthetic_count = unused_bytes / avg_tx_size;
         total_synthetic_count += synthetic_count;
 
-        for _ in 0..synthetic_count {
-            fee_multiset.push(FLOOR_FEE);
-        }
+        fee_multiset.extend(std::iter::repeat_n(FLOOR_FEE, synthetic_count as usize));
     }
 
     if fee_multiset.is_empty() {
@@ -3440,7 +3461,7 @@ fn compute_standard_fee(block_fees: &[BlockFees]) -> (u64, u64, bool) {
         (fee_multiset[len / 2 - 1] + fee_multiset[len / 2]) / 2
     };
 
-    let bucketed = bucket_fee_power_of_10(raw_median);
+    let bucketed = bucket_fee_alphabet(raw_median);
     let standard_fee = FLOOR_FEE.max(bucketed);
     let priority_fee = standard_fee.saturating_mul(PRIORITY_MULTIPLIER);
     let congested = total_synthetic_count == 0;
@@ -3448,17 +3469,28 @@ fn compute_standard_fee(block_fees: &[BlockFees]) -> (u64, u64, bool) {
     (standard_fee, priority_fee, congested)
 }
 
-pub(crate) fn bucket_fee_power_of_10(value: u64) -> u64 {
+/// Rounds a per-action fee to the nearest rung of the ZIP-317 fee alphabet
+/// {5000, 20000, 80000, ...} = 5000 * 4^n. The base 5000 is the current marginal
+/// fee and 4 is the current priority multiplier (weight-ratio cap), so standard
+/// and priority lanes sit on the same lattice. Values at or below the base map to
+/// the base; ties round down to the lower rung.
+pub(crate) fn bucket_fee_alphabet(value: u64) -> u64 {
+    const BASE: u64 = 5000;
+    const STEP: u64 = 4;
+
     if value == 0 {
         return 0;
     }
-
-    let mut lower = 1u64;
-    while lower <= value / 10 {
-        lower *= 10;
+    if value <= BASE {
+        return BASE;
     }
 
-    let upper = lower.saturating_mul(10);
+    let mut lower = BASE;
+    while lower.saturating_mul(STEP) <= value {
+        lower = lower.saturating_mul(STEP);
+    }
+
+    let upper = lower.saturating_mul(STEP);
     let lower_distance = value.saturating_sub(lower);
     let upper_distance = upper.saturating_sub(value);
 

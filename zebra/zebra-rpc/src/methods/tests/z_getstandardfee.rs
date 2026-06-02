@@ -20,7 +20,7 @@ use zebra_node_services::BoxError;
 use zebra_state::{HashOrHeight, ReadRequest, ReadResponse};
 use zebra_test::mock_service::MockService;
 
-use super::super::{bucket_fee_power_of_10, calculate_transaction_fee, RpcImpl, RpcServer};
+use super::super::{bucket_fee_alphabet, calculate_transaction_fee, RpcImpl, RpcServer};
 use crate::server::error::LegacyCode;
 
 /// Helper: create a block with a coinbase tx and a spend tx, returning it with its serialized size.
@@ -125,10 +125,10 @@ async fn z_getstandardfee_happy_path() {
         .expect("rpc task should not panic")
         .expect("rpc should succeed");
 
-    // With tiny blocks and 2MB capacity, synthetic fill dominates → median at floor (1000)
-    assert_eq!(response.standard_fee, 1000);
-    // Priority fee is always 10× standard, regardless of congestion
-    assert_eq!(response.priority_fee, 10_000);
+    // With tiny blocks and 2MB capacity, synthetic fill dominates → median at floor (5000)
+    assert_eq!(response.standard_fee, 5000);
+    // Priority fee is always 4× standard, regardless of congestion
+    assert_eq!(response.priority_fee, 20_000);
     // Not congested (huge synthetic fill)
     assert!(!response.congested);
     assert_eq!(response.version, "v0");
@@ -192,22 +192,22 @@ async fn z_getfeedistribution_happy_path() {
         .expect("rpc should succeed");
 
     // Same estimator output as z_getstandardfee over this window.
-    assert_eq!(response.standard_fee, 1000);
-    assert_eq!(response.priority_fee, 10_000);
+    assert_eq!(response.standard_fee, 5000);
+    assert_eq!(response.priority_fee, 20_000);
     assert_eq!(response.version, "v0");
     assert_eq!(response.height, 55);
 
-    // One real (non-coinbase) tx per block, each paying a tiny fee far below the
-    // 1000-zat floor, so every real tx lands in the below-standard tier and none
-    // in the standard or priority tiers.
+    // One real (non-coinbase) tx per block, each paying a tiny off-lane fee
+    // (neither exactly 5000 nor 20000), so every real tx is nonstandard.
     assert_eq!(response.total_tx_count, 50);
-    assert_eq!(response.below_standard_count, 50);
     assert_eq!(response.standard_count, 0);
-    assert_eq!(response.priority_tx_count, 0);
+    assert_eq!(response.priority_count, 0);
+    assert_eq!(response.nonstandard_count, 50);
 
-    // The histogram counts exactly the real transactions, with no synthetic fill.
+    // The histogram and the per-tx breakdown both cover exactly the real txs.
     let counted: u64 = response.distribution.values().sum();
     assert_eq!(counted, 50);
+    assert_eq!(response.transactions.len(), 50);
 
     mempool.expect_no_requests().await;
     state.expect_no_requests().await;
@@ -458,23 +458,20 @@ async fn calculate_transaction_fee_fetches_prev_tx_from_read_state() {
 }
 
 #[test]
-fn test_bucket_fee_power_of_10() {
-    assert_eq!(bucket_fee_power_of_10(0), 0);
-    assert_eq!(bucket_fee_power_of_10(1), 1);
-    // 5: distance to 1 = 4, distance to 10 = 5 → tie goes to lower
-    assert_eq!(bucket_fee_power_of_10(5), 1);
-    // 6: distance to 1 = 5, distance to 10 = 4 → upper
-    assert_eq!(bucket_fee_power_of_10(6), 10);
-    assert_eq!(bucket_fee_power_of_10(10), 10);
-    assert_eq!(bucket_fee_power_of_10(50), 10);
-    // 55: distance to 10 = 45, distance to 100 = 45 → tie goes to lower
-    assert_eq!(bucket_fee_power_of_10(55), 10);
-    assert_eq!(bucket_fee_power_of_10(56), 100);
-    assert_eq!(bucket_fee_power_of_10(100), 100);
-    assert_eq!(bucket_fee_power_of_10(550), 100);
-    assert_eq!(bucket_fee_power_of_10(551), 1000);
-    assert_eq!(bucket_fee_power_of_10(1000), 1000);
-    assert_eq!(bucket_fee_power_of_10(5000), 1000);
-    assert_eq!(bucket_fee_power_of_10(5500), 1000);
-    assert_eq!(bucket_fee_power_of_10(5501), 10000);
+fn test_bucket_fee_alphabet() {
+    // The fee alphabet is 5000 * 4^n = {5000, 20000, 80000, 320000, ...}.
+    assert_eq!(bucket_fee_alphabet(0), 0);
+    // At or below the base maps to the base.
+    assert_eq!(bucket_fee_alphabet(1), 5000);
+    assert_eq!(bucket_fee_alphabet(5000), 5000);
+    // 5000..20000: midpoint 12500, ties go to the lower rung.
+    assert_eq!(bucket_fee_alphabet(5001), 5000);
+    assert_eq!(bucket_fee_alphabet(12500), 5000);
+    assert_eq!(bucket_fee_alphabet(12501), 20000);
+    assert_eq!(bucket_fee_alphabet(20000), 20000);
+    // 20000..80000: midpoint 50000.
+    assert_eq!(bucket_fee_alphabet(50000), 20000);
+    assert_eq!(bucket_fee_alphabet(50001), 80000);
+    assert_eq!(bucket_fee_alphabet(80000), 80000);
+    assert_eq!(bucket_fee_alphabet(320000), 320000);
 }
