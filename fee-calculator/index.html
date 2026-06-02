@@ -34,8 +34,8 @@
 <!-- ======== HERO ======== -->
 <section id="page-hero">
   <div class="container">
-    <span class="page-eyebrow">Zcash dynamic fees</span>
-    <h1>What Zcash transactions actually pay</h1>
+    <span class="page-eyebrow">Simple, private, and free-market based</span>
+    <h1>Zcash Dynamic Fees</h1>
     <p class="page-lead">
       Zcash now publishes a fee suggestion with two tiers: a <strong>standard</strong> fee and a
       <strong>priority</strong> fee for faster inclusion. The obvious privacy question is how much the
@@ -52,36 +52,30 @@
     <span class="section-eyebrow">Mainnet usage</span>
     <h2>Who actually pays for priority</h2>
     <p class="section-lead">
-      Measured over the last 50 blocks, from confirmed non-coinbase transactions. The priority signal
-      is a single bit by design: a transaction either takes the priority lane or it does not. The split
-      below is that bit, live.
+      Measured over the last 50 blocks, from confirmed non-coinbase transactions, sorted by what each
+      pays per action: exactly the 5,000-zat ZIP-317 standard, exactly 4&times; (20,000) for the priority
+      lane, or something nonstandard. Drill into the per-transaction detail below.
     </p>
 
     <div class="split-bar" id="usage-split" data-empty="true">
       <div class="split-seg split-standard" id="seg-standard" style="width:100%"></div>
       <div class="split-seg split-priority" id="seg-priority" style="width:0%"></div>
+      <div class="split-seg split-nonstandard" id="seg-nonstandard" style="width:0%"></div>
     </div>
     <div class="split-legend">
-      <span><span class="swatch swatch-standard"></span> Standard or below <strong id="pct-standard">--</strong></span>
-      <span><span class="swatch swatch-priority"></span> Priority <strong id="pct-priority">--</strong></span>
+      <span><span class="swatch swatch-standard"></span> Standard, exactly 5,000 <strong id="pct-standard">--</strong></span>
+      <span><span class="swatch swatch-priority"></span> Priority, exactly 20,000 <strong id="pct-priority">--</strong></span>
+      <span><span class="swatch swatch-nonstandard"></span> Nonstandard <strong id="pct-nonstandard">--</strong></span>
     </div>
 
-    <div class="fee-cards usage-stats">
-      <div class="fee-card">
-        <div class="card-label">Transactions</div>
-        <div class="card-value" id="stat-total">--</div>
-        <div class="card-unit">in the window</div>
-      </div>
-      <div class="fee-card">
-        <div class="card-label">Priority share</div>
-        <div class="card-value" id="stat-priority-share">--</div>
-        <div class="card-unit">of real transactions</div>
-      </div>
+    <div class="usage-actions">
+      <span class="usage-total"><strong id="stat-total">--</strong> transactions in the window</span>
+      <button class="btn-drill" id="drill-btn">View transactions &rarr;</button>
     </div>
 
     <div class="chart-container">
       <div class="chart-header">
-        <h3>Priority share over time</h3>
+        <h3>Fee lanes over time</h3>
       </div>
       <div class="chart-canvas-wrap">
         <canvas id="usage-chart"></canvas>
@@ -90,11 +84,11 @@
     </div>
 
     <div class="callout callout-data" id="usage-note">
-      <strong>Reading this honestly.</strong> Adoption is early, so the priority bucket starts small.
-      That is the point worth being candid about: when priority is rare, it is <em>more</em>
-      identifying for the few who use it, not less. The design bounds the leak to about one bit
-      regardless, and the reassuring direction is the trend rather than today's number. As wallets ship
-      the feature, both buckets grow and the bit means less. Watch it fill.
+      <strong>Reading this honestly.</strong> "Priority" here means paying <em>exactly</em> 4&times; the
+      standard fee (the priority lane), not merely overpaying; off-lane overpayment lands in
+      <em>nonstandard</em>. The privacy point still holds: a fee choice leaks about one bit, and it is
+      more identifying when a lane is sparsely populated. As wallets ship consistent fee handling, expect
+      the standard and priority bands to firm up and nonstandard to shrink.
     </div>
   </div>
 </section>
@@ -105,7 +99,7 @@
     <span class="section-eyebrow">Right now</span>
     <h2>The current suggestion</h2>
     <p class="section-lead">
-      The live <code>z_getstandardfee</code> reading. Priority is always 10&times; standard; the
+      The live <code>z_getstandardfee</code> reading. Priority is always 4&times; standard; the
       congestion flag says whether paying it actually buys faster inclusion right now.
     </p>
     <div class="fee-cards">
@@ -158,13 +152,13 @@
       <div class="flow-arrow" aria-hidden="true">&rarr;</div>
       <div class="flow-step">
         <div class="flow-label">Bucket</div>
-        <div class="flow-body">Round to nearest power of 10</div>
+        <div class="flow-body">Snap to the 5,000 / 4&times; fee alphabet</div>
         <div class="flow-tag">private</div>
       </div>
       <div class="flow-arrow" aria-hidden="true">&rarr;</div>
       <div class="flow-step output">
         <div class="flow-label"><code>standard_fee</code></div>
-        <div class="flow-body">+ <code>priority_fee</code> at 10&times;</div>
+        <div class="flow-body">+ <code>priority_fee</code> at 4&times;</div>
         <div class="flow-tag">published</div>
       </div>
     </div>
@@ -172,6 +166,52 @@
       Policy-only, no consensus change. The full mechanism is on the <a href="/design">design page</a>
       and the drafts are on the <a href="/specs">specs page</a>. The usage split above is computed the
       same way, by the <code>z_getfeedistribution</code> companion to <code>z_getstandardfee</code>.
+    </p>
+  </div>
+</section>
+
+<!-- ======== ROADMAP ======== -->
+<section id="roadmap">
+  <div class="container">
+    <h2>How this rolls out</h2>
+    <p class="section-lead">
+      Permissionless and incremental: it ships as wallet conventions and a fee suggestion, no network
+      upgrade required. The streamlined
+      <a href="https://shieldedlabs.net/dynamic-fees-roadmap/" target="_blank" rel="noopener">Shielded Labs roadmap</a>
+      is three phases.
+    </p>
+
+    <div class="roadmap-flow">
+      <div class="roadmap-stage current">
+        <div class="roadmap-stage-head">
+          <span class="roadmap-num">1</span>
+          <h3>Experimental wallet pilots</h3>
+          <span class="roadmap-status">in progress</span>
+        </div>
+        <p>Wallet partners add three opt-in features: a Priority switch, a short transaction expiry, and a speed-up button that resubmits an expired transaction at the priority rate. The point is to watch real adoption, not to gate anything.</p>
+      </div>
+      <div class="roadmap-arrow" aria-hidden="true">&darr;</div>
+      <div class="roadmap-stage current">
+        <div class="roadmap-stage-head">
+          <span class="roadmap-num">2</span>
+          <h3>The fee estimator (<code>z_getstandardfee</code>)</h3>
+          <span class="roadmap-status">in progress</span>
+        </div>
+        <p>A full node computes the standard and priority fees from confirmed blocks, and indexers relay them so every wallet quotes the same number. The live readings above come from it.</p>
+      </div>
+      <div class="roadmap-arrow" aria-hidden="true">&darr;</div>
+      <div class="roadmap-stage optional">
+        <div class="roadmap-stage-head">
+          <span class="roadmap-num">3</span>
+          <h3>Parameter tuning</h3>
+          <span class="roadmap-status">future</span>
+        </div>
+        <p>Lower ZIP-317's marginal fee (5,000 &rarr; 1,000) once behavior data supports it. Today's 4&times; priority and 5,000 floor are the interim; a wider 10&times; lane is a possible later refinement.</p>
+      </div>
+    </div>
+    <p class="footnote">
+      Two ZIPs back this: one for the estimator, one for the parameter changes, both on the
+      <a href="/specs">specs page</a>.
     </p>
   </div>
 </section>
@@ -200,6 +240,31 @@
   </div>
 </section>
 
+<!-- ======== TRANSACTION DRILL-DOWN MODAL ======== -->
+<div class="modal-overlay" id="tx-modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="tx-modal-title">
+    <div class="modal-head">
+      <h3 id="tx-modal-title">Transactions in the current window</h3>
+      <button class="modal-close" id="tx-modal-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-filters">
+      <button class="filter-btn active" data-tier="all">All <span id="f-all">0</span></button>
+      <button class="filter-btn" data-tier="standard">Standard <span id="f-standard">0</span></button>
+      <button class="filter-btn" data-tier="priority">Priority <span id="f-priority">0</span></button>
+      <button class="filter-btn" data-tier="nonstandard">Nonstandard <span id="f-nonstandard">0</span></button>
+    </div>
+    <div class="modal-body">
+      <table class="tx-table">
+        <thead>
+          <tr><th>Tx</th><th>Fee/action</th><th>Actions</th><th>Fee</th><th>Tier</th></tr>
+        </thead>
+        <tbody id="tx-tbody"></tbody>
+      </table>
+      <p class="tx-empty" id="tx-empty" hidden>No transactions in this tier.</p>
+    </div>
+  </div>
+</div>
+
 <footer>
   <div class="container">
     <p>
@@ -209,8 +274,8 @@
   </div>
 </footer>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script src="/vendor/chart.umd.min.js"></script>
+<script src="/vendor/chartjs-adapter-date-fns.bundle.min.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

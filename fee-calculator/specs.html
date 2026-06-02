@@ -40,7 +40,38 @@
       Two ZIP drafts underpin this work: the <a href="#zip-estimator"><code>z_getstandardfee</code>
       estimator</a> and a <a href="#zip-marginal">ZIP-317 marginal-fee reduction</a>. Both are
       <strong>Draft, unassigned</strong>, not yet on zips.z.cash. The full text of each is hosted
-      below; discussion is on the Zcash community forum.
+      below; discussion is on the Zcash community forum. If you build transactions, start with the
+      <a href="#integrate">integrator quick-start</a>.
+    </p>
+  </div>
+</section>
+
+<!-- ======== INTEGRATOR QUICK-START ======== -->
+<section id="integrate" class="doc-section">
+  <div class="container">
+    <span class="section-eyebrow">For integrators</span>
+    <h2>Integrate dynamic fees</h2>
+    <p>
+      For anything that builds Zcash transactions: wallets, but also DEXs, bridges, and intents or
+      solver systems. Two things to add now, one to adopt when the estimator ships.
+    </p>
+
+    <p class="zip-subhead">Now: two features</p>
+    <ul class="open-list">
+      <li><strong>A Priority lane.</strong> Offer a higher-fee option and label it exactly <strong>"Priority."</strong> The shared name matters: if wallets each call it something different, the choice starts segmenting users by wording. Under current ZIP-317 parameters the priority fee is <strong>4&times;</strong> the standard fee.</li>
+      <li><strong>Speed-up semantics.</strong> Set a short transaction expiry, and when a transaction expires, resubmit it at the priority rate. This is the "bump a stuck transaction" experience without replace-by-fee, which Zcash deliberately does not do.</li>
+    </ul>
+
+    <p class="zip-subhead">Next: use the estimator</p>
+    <p>
+      When <code>z_getstandardfee</code> is available from your indexer (Zaino over JSON-RPC, lightwalletd
+      over gRPC), call it to set the standard and priority numbers from live network data instead of
+      hard-coding them. Until then, use the current ZIP-317 conventional fee. The endpoint is specified
+      in the <a href="#zip-estimator">estimator ZIP</a> below.
+    </p>
+    <p class="research-link">
+      Pilot coordination and integration questions:
+      <a href="https://forum.zcashcommunity.com/c/technology/dynamic-fees/100" target="_blank" rel="noopener">forum.zcashcommunity.com/c/technology/dynamic-fees</a>
     </p>
   </div>
 </section>

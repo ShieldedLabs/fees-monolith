@@ -238,6 +238,11 @@ function formatPct(v) {
   return `${v.toFixed(v < 10 ? 1 : 0)}%`;
 }
 
+const STANDARD_LANE = 5000;
+const PRIORITY_LANE = 20000;
+let _txData = [];
+let _txFilter = "all";
+
 async function fetchUsage() {
   const split = document.getElementById("usage-split");
   if (!split) return;
@@ -251,20 +256,27 @@ async function fetchUsage() {
   const total = Number(data && data.total_tx_count);
   if (!total) return; // no transactions in the window yet
 
-  const priority = Number(data.priority_tx_count || 0);
-  const priorityPct = (priority / total) * 100;
-  const standardPct = 100 - priorityPct;
+  const std = Number(data.standard_count || 0);
+  const pri = Number(data.priority_count || 0);
+  const non = Number(data.nonstandard_count || 0);
+  const pctOf = (n) => (n / total) * 100;
+
+  _txData = data.transactions || []; // stash for the drill-down modal
 
   split.setAttribute("data-empty", "false");
-  const segS = document.getElementById("seg-standard");
-  const segP = document.getElementById("seg-priority");
-  if (segS) segS.style.width = `${standardPct}%`;
-  if (segP) segP.style.width = `${priorityPct}%`;
+  setWidth("seg-standard", pctOf(std));
+  setWidth("seg-priority", pctOf(pri));
+  setWidth("seg-nonstandard", pctOf(non));
 
-  setText("pct-standard", formatPct(standardPct));
-  setText("pct-priority", formatPct(priorityPct));
+  setText("pct-standard", `${std} (${formatPct(pctOf(std))})`);
+  setText("pct-priority", `${pri} (${formatPct(pctOf(pri))})`);
+  setText("pct-nonstandard", `${non} (${formatPct(pctOf(non))})`);
   setText("stat-total", total.toLocaleString());
-  setText("stat-priority-share", formatPct(priorityPct));
+}
+
+function setWidth(id, pct) {
+  const el = document.getElementById(id);
+  if (el) el.style.width = `${pct}%`;
 }
 
 let _usageChart = null;
@@ -280,7 +292,7 @@ async function renderUsageChart() {
   } catch {
     // ignore; chart stays empty
   }
-  entries = entries.filter((e) => e.total_tx_count);
+  entries = entries.filter((e) => e.total_tx_count && e.nonstandard_count != null);
   if (entries.length < 2) {
     canvas.style.display = "none";
     if (empty) empty.style.display = "block";
@@ -290,18 +302,23 @@ async function renderUsageChart() {
   if (empty) empty.style.display = "none";
 
   const labels = entries.map((e) => new Date(e.ts));
-  const priorityShare = entries.map((e) => (e.priority_tx_count / e.total_tx_count) * 100);
-  const standardShare = priorityShare.map((p) => 100 - p);
+  const shareOf = (key) => entries.map((e) => ((e[key] || 0) / e.total_tx_count) * 100);
   const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   const accent = cssVar("--accent") || "#f4b728";
   const red = cssVar("--red") || "#f87171";
   const muted = cssVar("--text-muted") || "#6b7394";
   const border = cssVar("--border") || "#1e2a45";
+  const bands = [
+    ["Standard", shareOf("standard_count"), accent, "rgba(244, 183, 40, 0.18)"],
+    ["Priority", shareOf("priority_count"), red, "rgba(248, 113, 113, 0.30)"],
+    ["Nonstandard", shareOf("nonstandard_count"), muted, "rgba(107, 115, 148, 0.25)"],
+  ];
 
   if (_usageChart) {
     _usageChart.data.labels = labels;
-    _usageChart.data.datasets[0].data = priorityShare;
-    _usageChart.data.datasets[1].data = standardShare;
+    bands.forEach((b, i) => {
+      _usageChart.data.datasets[i].data = b[1];
+    });
     _usageChart.update("none");
     return;
   }
@@ -310,26 +327,15 @@ async function renderUsageChart() {
     type: "line",
     data: {
       labels,
-      datasets: [
-        {
-          label: "Priority",
-          data: priorityShare,
-          borderColor: red,
-          backgroundColor: "rgba(248, 113, 113, 0.30)",
-          borderWidth: 1.5,
-          pointRadius: 0,
-          fill: true,
-        },
-        {
-          label: "Standard or below",
-          data: standardShare,
-          borderColor: accent,
-          backgroundColor: "rgba(244, 183, 40, 0.12)",
-          borderWidth: 1.5,
-          pointRadius: 0,
-          fill: true,
-        },
-      ],
+      datasets: bands.map(([label, data, bc, bg]) => ({
+        label,
+        data,
+        borderColor: bc,
+        backgroundColor: bg,
+        borderWidth: 1.5,
+        pointRadius: 0,
+        fill: true,
+      })),
     },
     options: {
       responsive: true,
@@ -366,6 +372,88 @@ async function renderUsageChart() {
   });
 }
 
+// ---- Drill-down modal ----
+
+function tierOf(fpa) {
+  if (fpa === PRIORITY_LANE) return "priority";
+  if (fpa === STANDARD_LANE) return "standard";
+  return "nonstandard";
+}
+
+function shortTxid(t) {
+  return t && t.length > 18 ? `${t.slice(0, 8)}…${t.slice(-8)}` : t || "";
+}
+
+function renderTxTable() {
+  const tbody = document.getElementById("tx-tbody");
+  const empty = document.getElementById("tx-empty");
+  if (!tbody) return;
+  const rows = _txData.filter((t) => _txFilter === "all" || tierOf(t.fee_per_action) === _txFilter);
+  tbody.innerHTML = "";
+  if (!rows.length) {
+    if (empty) empty.hidden = false;
+    return;
+  }
+  if (empty) empty.hidden = true;
+  const frag = document.createDocumentFragment();
+  for (const t of rows) {
+    const tier = tierOf(t.fee_per_action);
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      `<td class="mono"><a href="https://cipherscan.app/tx/${t.txid}" target="_blank" rel="noopener">${shortTxid(t.txid)}</a></td>` +
+      `<td class="mono num">${Number(t.fee_per_action).toLocaleString()}</td>` +
+      `<td class="mono num">${t.actions}</td>` +
+      `<td class="mono num">${Number(t.fee).toLocaleString()}</td>` +
+      `<td><span class="tier tier-${tier}">${tier}</span></td>`;
+    frag.appendChild(tr);
+  }
+  tbody.appendChild(frag);
+}
+
+async function openTxModal() {
+  const modal = document.getElementById("tx-modal");
+  if (!modal) return;
+  modal.hidden = false;
+  try {
+    const res = await fetch("/api/usage", { cache: "no-cache" });
+    if (res.ok) _txData = (await res.json()).transactions || [];
+  } catch {
+    // fall back to whatever fetchUsage stashed
+  }
+  const count = (tier) => _txData.filter((t) => tierOf(t.fee_per_action) === tier).length;
+  setText("f-all", String(_txData.length));
+  setText("f-standard", String(count("standard")));
+  setText("f-priority", String(count("priority")));
+  setText("f-nonstandard", String(count("nonstandard")));
+  renderTxTable();
+}
+
+function initTxModal() {
+  const btn = document.getElementById("drill-btn");
+  const modal = document.getElementById("tx-modal");
+  if (!btn || !modal) return;
+  const close = () => {
+    modal.hidden = true;
+  };
+  btn.addEventListener("click", openTxModal);
+  const closeBtn = document.getElementById("tx-modal-close");
+  if (closeBtn) closeBtn.addEventListener("click", close);
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) close();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !modal.hidden) close();
+  });
+  document.querySelectorAll(".filter-btn").forEach((b) => {
+    b.addEventListener("click", () => {
+      document.querySelectorAll(".filter-btn").forEach((x) => x.classList.remove("active"));
+      b.classList.add("active");
+      _txFilter = b.dataset.tier;
+      renderTxTable();
+    });
+  });
+}
+
 // ---- Mobile nav toggle ----
 
 function initNavToggle() {
@@ -390,6 +478,7 @@ function initNavToggle() {
 initTabs();
 initCopy();
 initNavToggle();
+initTxModal();
 
 // Polling only runs if the page has live data targets (portal hero or design RPC response).
 const needsLiveData =
