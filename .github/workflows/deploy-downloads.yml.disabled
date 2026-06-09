@@ -1,0 +1,117 @@
+name: Deploy Downloads Page
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'downloads/**'
+      - 'index.html'
+      - 'assets/**'
+      - '.github/workflows/deploy-downloads.yml'
+  release:
+    types: [published]
+  workflow_dispatch:
+
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Prepare site
+        run: |
+          # Create a _site directory with both root and downloads
+          mkdir -p _site/downloads
+          
+          # Always ensure index.html exists
+          if [ -f index.html ]; then
+            echo "📄 Using local index.html"
+            cp index.html _site/
+          else
+            echo "⚠️  index.html not found, creating fallback"
+            cat > _site/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>NozyWallet - Privacy by Default</title>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          </head>
+          <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+            <h1>🦋 NozyWallet</h1>
+            <p>Privacy by Default</p>
+            <p><a href="/downloads/">Download NozyWallet</a></p>
+          </body>
+          </html>
+          EOF
+          fi
+          
+          # Copy downloads page
+          if [ -d downloads ]; then
+            echo "📦 Copying downloads directory"
+            cp -r downloads/* _site/downloads/ 2>/dev/null || true
+            # Ensure index.html exists in downloads
+            if [ -f downloads/index.html ]; then
+              echo "✅ Downloads index.html found"
+            else
+              echo "⚠️  Downloads index.html not found"
+            fi
+          else
+            echo "⚠️  Downloads directory not found"
+          fi
+          
+          # Copy assets folder (for Vercel landing page)
+          if [ -d assets ]; then
+            echo "📦 Copying assets folder"
+            cp -r assets _site/ 2>/dev/null || true
+            
+            # React bundle expects /logo.png at root, so copy it there too
+            if [ -f assets/logo.png ]; then
+              echo "📦 Copying logo.png to root (React bundle expects /logo.png)"
+              cp assets/logo.png _site/logo.png
+              echo "✅ Logo copied to root"
+            fi
+          fi
+          
+          # Verify files
+          echo "📦 Files ready for deployment:"
+          echo "Root files:"
+          ls -la _site/ || true
+          if [ -d _site/assets ]; then
+            echo "✅ Assets folder:"
+            ls -la _site/assets/ || true
+          fi
+          if [ -d _site/downloads ]; then
+            echo "✅ Downloads folder:"
+            ls -la _site/downloads/ || true
+            if [ -f _site/downloads/index.html ]; then
+              echo "✅ Downloads index.html exists"
+            else
+              echo "❌ Downloads index.html MISSING!"
+              exit 1
+            fi
+          else
+            echo "❌ Downloads directory MISSING!"
+            exit 1
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+

@@ -1,0 +1,92 @@
+Param()
+
+$ErrorActionPreference = "Stop"
+
+Write-Host "== Nozy Extension Smoke ==" -ForegroundColor Cyan
+
+function Invoke-Strict {
+    param(
+        [Parameter(Mandatory = $true)][string]$Command,
+        [Parameter(ValueFromRemainingArguments = $true)][object[]]$Arguments
+    )
+    & $Command @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "Command failed ($LASTEXITCODE): $Command $($Arguments -join ' ')"
+    }
+}
+
+function Invoke-Step {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][scriptblock]$Action
+    )
+    Write-Host ""
+    Write-Host "-> $Name" -ForegroundColor Yellow
+    & $Action
+    Write-Host "<- $Name OK" -ForegroundColor Green
+}
+
+Push-Location $PSScriptRoot\..
+try {
+    Invoke-Step "Worker utility tests" {
+        Invoke-Strict node --test "browser-extension/background/tx-utils.test.mjs" "browser-extension/background/mobile-sync.test.mjs" "browser-extension/background/tx-lifecycle.test.mjs"
+    }
+
+    Invoke-Step "Popup typecheck + build" {
+        Push-Location "browser-extension/wasm-core/popup"
+        try {
+            Invoke-Strict npm run typecheck
+            Invoke-Strict npm run build
+        } finally {
+            Pop-Location
+        }
+    }
+
+    Invoke-Step "WASM core host compile check" {
+        Push-Location "browser-extension/wasm-core"
+        try {
+            Invoke-Strict cargo check
+        } finally {
+            Pop-Location
+        }
+    }
+
+    Invoke-Step "WASM core unit tests" {
+        Push-Location "browser-extension/wasm-core"
+        try {
+            Invoke-Strict cargo test --lib
+        } finally {
+            Pop-Location
+        }
+    }
+
+    Invoke-Step "WASM target compile check" {
+        Push-Location "browser-extension/wasm-core"
+        try {
+            $installedTargets = (& rustup target list --installed)
+            if ($LASTEXITCODE -ne 0) {
+                throw "Command failed ($LASTEXITCODE): rustup target list --installed"
+            }
+            $hasWasmTarget = @($installedTargets | Select-String -Pattern "^wasm32-unknown-unknown$").Count -gt 0
+            if (-not $hasWasmTarget) {
+                Invoke-Strict rustup target add wasm32-unknown-unknown
+            }
+            $env:CARGO_BUILD_RUSTC = (& rustup which --toolchain stable rustc)
+            if ($LASTEXITCODE -ne 0) {
+                throw "Command failed ($LASTEXITCODE): rustup which --toolchain stable rustc"
+            }
+            Invoke-Strict rustup run stable cargo check --target wasm32-unknown-unknown
+        } finally {
+            Remove-Item Env:\CARGO_BUILD_RUSTC -ErrorAction SilentlyContinue
+            Pop-Location
+        }
+    }
+
+    Write-Host ""
+    Write-Host "All automated smoke checks passed." -ForegroundColor Green
+    Write-Host "Note: browser UI click-flow smoke still requires browser-extension install context." -ForegroundColor DarkYellow
+}
+finally {
+    Pop-Location
+}
+
