@@ -1,0 +1,24 @@
+//! [lightwalletd](https://github.com/zcash/lightwalletd) gRPC client, compact-block SQLite cache, and
+//! [`crate::BlockSource`](crate::traits::BlockSource) for Zebrad-backed setups.
+
+#[allow(clippy::all)]
+pub mod proto {
+    tonic::include_proto!("cash.z.wallet.sdk.rpc");
+}
+
+mod block_source;
+mod client;
+mod compact_orchard;
+mod store;
+mod sync;
+
+pub use block_source::LightwalletdBlockSource;
+pub use client::{connect_lightwalletd, LwdClient};
+pub use compact_orchard::orchard_cmx_bytes_from_compact_block;
+pub use store::LwdCompactStore;
+pub use sync::{
+    chain_tip_height, compact_sync_progress_height, prune_stale_compact_cache,
+    requested_start_height_for_tip_sync, sync_compact_range, sync_compact_range_with_options,
+    sync_compact_to_tip, sync_compact_to_tip_with_options, SyncCompactOptions, SyncCompactStats,
+    SyncCompactToTipOptions, SyncCompactToTipStats,
+};

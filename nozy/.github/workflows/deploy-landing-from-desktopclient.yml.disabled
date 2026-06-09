@@ -1,0 +1,97 @@
+name: Deploy Landing Page
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'landing/**'
+      - '.github/workflows/deploy-landing-from-desktopclient.yml'
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * *'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: landing/package-lock.json
+
+      - name: Install landing page dependencies
+        working-directory: landing
+        run: npm ci
+
+      - name: Build landing page
+        working-directory: landing
+        run: npm run build
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Prepare site
+        run: |
+          # Create site directory
+          mkdir -p _site
+          
+          # Copy built landing page from landing/dist to _site
+          if [ -d landing/dist ]; then
+            echo "✅ Found built landing page in landing/dist/"
+            cp -r landing/dist/* _site/ 2>/dev/null || true
+            echo "✅ Copied landing page files"
+          elif [ -d landing/docs ]; then
+            echo "✅ Found built landing page in landing/docs/"
+            cp -r landing/docs/* _site/ 2>/dev/null || true
+            echo "✅ Copied landing page files from docs/"
+          else
+            echo "⚠️  No built landing page found, checking if we need to build..."
+            exit 1
+          fi
+          
+          # Copy downloads page from main repo
+          mkdir -p _site/downloads
+          if [ -d downloads ]; then
+            cp -r downloads/* _site/downloads/ 2>/dev/null || true
+            echo "✅ Copied downloads page"
+          fi
+          
+          # Copy assets folder (if exists in root)
+          if [ -d assets ]; then
+            echo "📦 Copying assets folder"
+            cp -r assets _site/ 2>/dev/null || true
+          fi
+          
+          # Verify index.html exists
+          if [ -f _site/index.html ]; then
+            echo "✅ Landing page ready: _site/index.html"
+            ls -lh _site/index.html
+          else
+            echo "❌ ERROR: index.html not found!"
+            exit 1
+          fi
+          
+          # List what we're deploying
+          echo "📦 Deploying:"
+          find _site -type f | head -20
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

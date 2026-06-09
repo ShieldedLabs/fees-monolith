@@ -1,0 +1,27 @@
+FROM rust:latest AS builder
+
+WORKDIR /app
+
+
+COPY Cargo.toml ./
+COPY api-server ./api-server
+COPY zeaking ./zeaking
+COPY src ./src
+
+RUN cargo build --release --workspace --bin nozywallet-api
+
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY --from=builder /app/target/release/nozywallet-api /app/nozywallet-api
+
+RUN mkdir -p /app/wallet_data
+
+EXPOSE 3000
+
+CMD ["/app/nozywallet-api"]

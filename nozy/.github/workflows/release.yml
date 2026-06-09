@@ -1,0 +1,413 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  
+  workflow_dispatch:  
+
+permissions:
+  contents: write
+
+jobs:
+  build-cli:
+    name: Build CLI Binaries
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            binary: nozy
+            extension: ""
+            friendly_name: nozy-linux
+            build_mode: native
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary: nozy.exe
+            extension: ".exe"
+            friendly_name: nozy-windows.exe
+            build_mode: native
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            binary: nozy
+            extension: ""
+            friendly_name: nozy-macos-intel
+            build_mode: cross
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            binary: nozy
+            extension: ""
+            friendly_name: nozy-macos-arm
+            build_mode: native
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Verify Cargo.lock is usable (locked)
+        run: |
+          cargo metadata --locked --format-version 1 > /dev/null
+          echo "✅ Cargo.lock is consistent (locked build)"
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Run security audit
+        run: cargo audit || echo "Security audit found issues - see Dependabot alerts (non-blocking, same as CI)"
+
+      - name: Configure Cargo network retry
+        run: |
+          mkdir -p $HOME/.cargo
+          cat >> $HOME/.cargo/config.toml << EOF
+          [net]
+          retry = 3
+          git-fetch-with-cli = true
+          EOF
+
+      - name: Build CLI binary
+        env:
+          CARGO_NET_TIMEOUT: 300
+        run: |
+          set -euo pipefail
+          build_cli() {
+            if [[ "${{ matrix.build_mode }}" == "cross" ]]; then
+              cargo build --release --target "${{ matrix.target }}" --bin nozy
+            else
+              cargo build --release --bin nozy
+            fi
+          }
+          build_cli || { echo "Build failed, retrying..."; sleep 5; build_cli; }
+        timeout-minutes: 45
+
+      - name: Rename binary to friendly name and generate hash
+        run: |
+          if [[ "${{ matrix.build_mode }}" == "cross" ]]; then
+            SRC="target/${{ matrix.target }}/release/${{ matrix.binary }}"
+          else
+            SRC="target/release/${{ matrix.binary }}"
+          fi
+          cp "$SRC" ${{ matrix.friendly_name }}
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            powershell -NoProfile -Command '$h=(Get-FileHash -Path "${{ matrix.friendly_name }}" -Algorithm SHA256).Hash.ToLower(); Set-Content -Path "${{ matrix.friendly_name }}.sha256" -Value ($h + "  ${{ matrix.friendly_name }}") -NoNewline'
+          else
+            shasum -a 256 ${{ matrix.friendly_name }} > ${{ matrix.friendly_name }}.sha256
+          fi
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        continue-on-error: false
+        with:
+          name: nozy-cli-${{ matrix.target }}${{ matrix.extension }}
+          path: |
+            ${{ matrix.friendly_name }}
+            ${{ matrix.friendly_name }}.sha256
+          retention-days: 90
+          if-no-files-found: error
+
+  build-api:
+    name: Build API Server Binaries
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            binary: nozywallet-api
+            extension: ""
+            build_mode: native
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary: nozywallet-api.exe
+            extension: ".exe"
+            build_mode: native
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            binary: nozywallet-api
+            extension: ""
+            build_mode: cross
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            binary: nozywallet-api
+            extension: ""
+            build_mode: native
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Verify Cargo.lock is usable (locked)
+        run: |
+          cargo metadata --locked --format-version 1 > /dev/null
+          echo "✅ Cargo.lock is consistent (locked build)"
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Run security audit
+        run: cargo audit || echo "Security audit found issues - see Dependabot alerts (non-blocking, same as CI)"
+
+      - name: Configure Cargo network retry
+        run: |
+          mkdir -p $HOME/.cargo
+          cat >> $HOME/.cargo/config.toml << EOF
+          [net]
+          retry = 3
+          git-fetch-with-cli = true
+          EOF
+
+      - name: Build API server binary
+        env:
+          CARGO_NET_TIMEOUT: 300
+        run: |
+          set -euo pipefail
+          build_api() {
+            if [[ "${{ matrix.build_mode }}" == "cross" ]]; then
+              cargo build --release --target "${{ matrix.target }}" --package nozywallet-api
+            else
+              cargo build --release --package nozywallet-api
+            fi
+          }
+          build_api || { echo "Build failed, retrying..."; sleep 5; build_api; }
+        timeout-minutes: 45
+
+      - name: Generate SHA256 hash
+        id: hash
+        run: |
+          if [[ "${{ matrix.build_mode }}" == "cross" ]]; then
+            BIN="target/${{ matrix.target }}/release/${{ matrix.binary }}"
+          else
+            BIN="target/release/${{ matrix.binary }}"
+          fi
+          if [[ ! -f "$BIN" ]]; then
+            echo "Expected binary missing at $BIN"
+            exit 1
+          fi
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            powershell -NoProfile -Command '$h=(Get-FileHash -Path "'"$BIN"'" -Algorithm SHA256).Hash.ToLower(); Set-Content -Path "hash.txt" -Value ($h + "  ${{ matrix.binary }}") -NoNewline'
+          else
+            shasum -a 256 "$BIN" > hash.txt
+          fi
+          HASH=$(cat hash.txt | awk '{print $1}')
+          echo "hash=$HASH" >> $GITHUB_OUTPUT
+          echo "Generated hash: $HASH"
+
+      # upload-artifact path: avoid inline format() — it has failed silently before (artifacts had only hash.txt).
+      - name: Stage API binary for artifact upload
+        run: |
+          set -euo pipefail
+          if [[ "${{ matrix.build_mode }}" == "cross" ]]; then
+            BIN="target/${{ matrix.target }}/release/${{ matrix.binary }}"
+          else
+            BIN="target/release/${{ matrix.binary }}"
+          fi
+          mkdir -p api-upload
+          cp "$BIN" "api-upload/${{ matrix.binary }}"
+          cp hash.txt api-upload/hash.txt
+          ls -la api-upload
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        continue-on-error: false
+        with:
+          name: nozywallet-api-${{ matrix.target }}${{ matrix.extension }}
+          path: api-upload
+          retention-days: 90
+          if-no-files-found: error
+
+  create-release:
+    name: Create Release
+    needs: [build-cli, build-api]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        continue-on-error: false
+        with:
+          path: artifacts
+
+      - name: Rename and organize release files
+        run: |
+          mkdir -p release-files
+          # Copy CLI binaries (already have friendly names)
+          find artifacts -type f -name "nozy-*" ! -name "*.sha256" ! -name "*.txt" -exec cp {} release-files/ \;
+          find artifacts -type f -name "nozy-*.sha256" -exec cp {} release-files/ \;
+          # Copy and rename API server binaries (artifact layout: api-upload/<binary> + hash.txt)
+          for dir in artifacts/nozywallet-api-*/; do
+            [ -d "$dir" ] || continue
+            target_name=$(basename "$dir")
+            copied=
+            for bin in "$dir"nozywallet-api* "$dir"/*.exe; do
+              [ -f "$bin" ] || continue
+              base=$(basename "$bin")
+              if [ "$base" = "hash.txt" ]; then
+                continue
+              fi
+              cp "$bin" "release-files/${target_name}"
+              copied=1
+              break
+            done
+            if [ -z "$copied" ]; then
+              echo "::error::No API binary under $dir (only hash?)"
+              ls -la "$dir" || true
+              exit 1
+            fi
+            if [ -f "${dir}hash.txt" ]; then
+              cp "${dir}hash.txt" "release-files/${target_name}.sha256"
+            fi
+          done
+
+      - name: Generate hashes file
+        run: |
+          echo "# NozyWallet Release Hashes" > release-files/HASHES.txt
+          echo "" >> release-files/HASHES.txt
+          echo "## SHA256 Hashes" >> release-files/HASHES.txt
+          echo "" >> release-files/HASHES.txt
+          echo "Generated: $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> release-files/HASHES.txt
+          echo "Version: ${GITHUB_REF#refs/tags/}" >> release-files/HASHES.txt
+          echo "" >> release-files/HASHES.txt
+          echo "## CLI Binaries" >> release-files/HASHES.txt
+          echo "" >> release-files/HASHES.txt
+          
+          # Collect all hash files
+          find release-files -name "*.sha256" -exec cat {} \; >> release-files/HASHES.txt || true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: release-files/**
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## 🎉 NozyWallet ${{ github.ref_name }} Release
+            
+            ### One-click links (`/releases/latest/download/…`)
+            
+            Release tag: **`${{ github.ref_name }}`**. These URLs always resolve to the **latest** published release:
+            
+            | Product | URL |
+            |--------|-----|
+            | Windows desktop **.exe** (NSIS) | `https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-desktop-windows-x86_64-installer.exe` |
+            | Windows desktop **.msi** | `https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-desktop-windows-x86_64-installer.msi` |
+            | **Extension** (Chromium zip) | `https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-extension-chromium.zip` |
+            | CLI Windows | `https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-windows.exe` |
+            
+            Desktop installers and extension zips may appear a few minutes after publish (separate workflows attach them to this tag).
+            
+            ### 📦 Downloads
+            
+            **CLI Binary:**
+            - **Windows (x86_64):** `nozy-windows.exe`
+            - **Linux (x86_64):** `nozy-linux`
+            - **macOS Intel:** `nozy-macos-intel`
+            - **macOS Apple Silicon (M1/M2/M3):** `nozy-macos-arm`
+            
+            **API Server:**
+            - Linux (x86_64): `nozywallet-api-x86_64-unknown-linux-gnu`
+            - Windows (x86_64): `nozywallet-api-x86_64-pc-windows-msvc.exe`
+            - macOS Intel: `nozywallet-api-x86_64-apple-darwin`
+            - macOS Apple Silicon: `nozywallet-api-aarch64-apple-darwin`
+            
+            ### 📝 Installation Instructions
+            
+            **Windows:**
+            1. Download `nozy-windows.exe`
+            2. Run the executable directly
+            
+            **Linux:**
+            1. Download `nozy-linux`
+            2. Make it executable: `chmod +x nozy-linux`
+            3. Run: `./nozy-linux`
+            
+            **macOS:**
+            1. Download the appropriate version for your Mac:
+               - Intel Macs: `nozy-macos-intel`
+               - Apple Silicon (M1/M2/M3): `nozy-macos-arm`
+            2. Make it executable: `chmod +x nozy-macos-*`
+            3. Run: `./nozy-macos-*`
+            
+            **Note:** Desktop assets for Windows, Linux, and macOS are attached by the `Build Desktop Release` workflow shortly after this release is published.
+            
+            ### 🔒 Security
+            
+            All binaries are signed with SHA256 hashes. Verify downloads using `HASHES.txt` or the individual `.sha256` files.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Releases created with GITHUB_TOKEN do not emit `release: published` to other workflows.
+  # Dispatch desktop + extension builds so installers and zips attach to this tag.
+  dispatch-surface-builds:
+    name: Trigger desktop and extension release builds
+    needs: create-release
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dispatch desktop release build
+        uses: actions/github-script@v7
+        env:
+          TAG: ${{ github.ref_name }}
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'desktop-release.yml',
+              ref: 'master',
+              inputs: { tag: process.env.TAG },
+            });
+
+      - name: Read extension version from manifest
+        id: extver
+        run: echo "version=$(jq -r .version browser-extension/manifest.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch extension bundles (attach to this release tag)
+        uses: actions/github-script@v7
+        env:
+          TAG: ${{ github.ref_name }}
+          EXT_VERSION: ${{ steps.extver.outputs.version }}
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'extension-release.yml',
+              ref: 'master',
+              inputs: {
+                version: process.env.EXT_VERSION,
+                attach_tag: process.env.TAG,
+              },
+            });
+

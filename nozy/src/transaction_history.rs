@@ -1,0 +1,871 @@
+use crate::error::{NozyError, NozyResult};
+use crate::notes::OrchardNote;
+use crate::paths::get_wallet_data_dir;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
+
+#[derive(Debug, Clone)]
+pub struct NoteForHistory {
+    pub id: String,
+    pub note: OrchardNote,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SentTransactionRecord {
+    pub txid: String,
+
+    pub recipient_address: String,
+
+    pub amount_zatoshis: u64,
+
+    pub fee_zatoshis: u64,
+
+    pub memo: Option<Vec<u8>>,
+
+    pub created_at: DateTime<Utc>,
+
+    pub broadcast_at: Option<DateTime<Utc>>,
+
+    pub status: TransactionStatus,
+
+    pub block_height: Option<u32>,
+
+    pub block_time: Option<DateTime<Utc>>,
+
+    pub confirmations: u32,
+
+    pub spent_note_ids: Vec<String>,
+
+    /// Dynamic-fee pilot: user opted into priority (fee ×4).
+    #[serde(default)]
+    pub priority: bool,
+
+    /// Absolute chain height after which the tx must not be mined (pilot: tip + 2).
+    #[serde(default)]
+    pub expiry_height: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransactionView {
+    pub txid: String,
+
+    pub transaction_type: TransactionType,
+
+    pub net_amount_zatoshis: i64,
+
+    pub fee_zatoshis: Option<u64>,
+
+    pub recipient_address: Option<String>,
+
+    pub my_addresses: Vec<String>,
+
+    pub block_height: Option<u32>,
+
+    pub block_time: Option<DateTime<Utc>>,
+
+    pub confirmations: u32,
+
+    pub status: TransactionStatus,
+
+    pub memo: Option<String>,
+
+    pub notes_involved: Vec<String>,
+
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum TransactionType {
+    Sent,
+
+    Received,
+
+    Change,
+
+    Mixed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum TransactionStatus {
+    Pending,
+
+    Confirmed,
+
+    Failed,
+
+    /// Broadcast but never mined before [`SentTransactionRecord::expiry_height`].
+    Expired,
+}
+
+impl TransactionStatus {
+    pub fn is_confirmed(&self) -> bool {
+        matches!(self, TransactionStatus::Confirmed)
+    }
+
+    pub fn is_pending(&self) -> bool {
+        matches!(self, TransactionStatus::Pending)
+    }
+
+    pub fn is_expired(&self) -> bool {
+        matches!(self, TransactionStatus::Expired)
+    }
+}
+
+impl TransactionType {
+    pub fn label(&self) -> &'static str {
+        match self {
+            TransactionType::Sent => "Sent",
+            TransactionType::Received => "Received",
+            TransactionType::Change => "Change",
+            TransactionType::Mixed => "Mixed",
+        }
+    }
+}
+
+impl SentTransactionRecord {
+    pub fn new(
+        txid: String,
+        recipient_address: String,
+        amount_zatoshis: u64,
+        fee_zatoshis: u64,
+        memo: Option<Vec<u8>>,
+        spent_note_ids: Vec<String>,
+    ) -> Self {
+        Self {
+            txid,
+            recipient_address,
+            amount_zatoshis,
+            fee_zatoshis,
+            memo,
+            created_at: Utc::now(),
+            broadcast_at: None,
+            status: TransactionStatus::Pending,
+            block_height: None,
+            block_time: None,
+            confirmations: 0,
+            spent_note_ids,
+            priority: false,
+            expiry_height: None,
+        }
+    }
+
+    pub fn new_pilot(
+        txid: String,
+        recipient_address: String,
+        amount_zatoshis: u64,
+        fee_zatoshis: u64,
+        memo: Option<Vec<u8>>,
+        spent_note_ids: Vec<String>,
+        priority: bool,
+        expiry_height: u32,
+    ) -> Self {
+        Self {
+            txid,
+            recipient_address,
+            amount_zatoshis,
+            fee_zatoshis,
+            memo,
+            created_at: Utc::now(),
+            broadcast_at: None,
+            status: TransactionStatus::Pending,
+            block_height: None,
+            block_time: None,
+            confirmations: 0,
+            spent_note_ids,
+            priority,
+            expiry_height: Some(expiry_height),
+        }
+    }
+
+    pub fn mark_broadcast(&mut self) {
+        self.broadcast_at = Some(Utc::now());
+    }
+
+    pub fn mark_confirmed(
+        &mut self,
+        block_height: u32,
+        block_time: DateTime<Utc>,
+        current_height: u32,
+    ) {
+        self.status = TransactionStatus::Confirmed;
+        self.block_height = Some(block_height);
+        self.block_time = Some(block_time);
+        self.confirmations = current_height.saturating_sub(block_height) + 1;
+    }
+
+    pub fn mark_failed(&mut self) {
+        self.status = TransactionStatus::Failed;
+    }
+
+    pub fn mark_expired(&mut self) {
+        self.status = TransactionStatus::Expired;
+        self.confirmations = 0;
+    }
+}
+
+impl TransactionView {
+    pub fn from_received_notes(notes: &[&NoteForHistory], current_height: u32) -> Option<Self> {
+        if notes.is_empty() {
+            return None;
+        }
+
+        let first_note = notes[0];
+        let txid = first_note.note.txid.clone();
+
+        let total_received: u64 = notes.iter().map(|n| n.note.value).sum();
+
+        let block_height = Some(first_note.note.block_height);
+        let block_time = first_note.created_at;
+
+        let memo = notes.iter().find_map(|n| {
+            if !n.note.memo.is_empty() {
+                String::from_utf8(n.note.memo.clone()).ok()
+            } else {
+                None
+            }
+        });
+
+        let my_addresses: Vec<String> = notes
+            .iter()
+            .map(|n| format!("{:?}", n.note.address))
+            .collect();
+
+        let confirmations = if let Some(height) = block_height {
+            current_height.saturating_sub(height) + 1
+        } else {
+            0
+        };
+
+        Some(Self {
+            txid,
+            transaction_type: TransactionType::Received,
+            net_amount_zatoshis: total_received as i64,
+            fee_zatoshis: None,
+            recipient_address: None,
+            my_addresses,
+            block_height,
+            block_time: Some(block_time),
+            confirmations,
+            status: TransactionStatus::Confirmed,
+            memo,
+            notes_involved: notes.iter().map(|n| n.id.clone()).collect(),
+            created_at: first_note.created_at,
+        })
+    }
+
+    pub fn from_sent_record(record: &SentTransactionRecord) -> Self {
+        Self {
+            txid: record.txid.clone(),
+            transaction_type: TransactionType::Sent,
+            net_amount_zatoshis: -(record.amount_zatoshis as i64),
+            fee_zatoshis: Some(record.fee_zatoshis),
+            recipient_address: Some(record.recipient_address.clone()),
+            my_addresses: vec![],
+            block_height: record.block_height,
+            block_time: record.block_time,
+            confirmations: record.confirmations,
+            status: record.status.clone(),
+            memo: record
+                .memo
+                .as_ref()
+                .and_then(|m| String::from_utf8(m.clone()).ok()),
+            notes_involved: record.spent_note_ids.clone(),
+            created_at: record.created_at,
+        }
+    }
+
+    pub fn merge_with_received(&mut self, received_amount: u64) {
+        self.transaction_type = TransactionType::Mixed;
+        self.net_amount_zatoshis += received_amount as i64;
+    }
+
+    pub fn amount_zec(&self) -> f64 {
+        (self.net_amount_zatoshis.abs() as f64) / 100_000_000.0
+    }
+
+    pub fn fee_zec(&self) -> Option<f64> {
+        self.fee_zatoshis.map(|f| (f as f64) / 100_000_000.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_transaction_status() {
+        let status = TransactionStatus::Pending;
+        assert!(status.is_pending());
+        assert!(!status.is_confirmed());
+
+        let status = TransactionStatus::Confirmed;
+        assert!(!status.is_pending());
+        assert!(status.is_confirmed());
+    }
+
+    #[test]
+    fn test_transaction_type_label() {
+        assert_eq!(TransactionType::Sent.label(), "Sent");
+        assert_eq!(TransactionType::Received.label(), "Received");
+        assert_eq!(TransactionType::Change.label(), "Change");
+        assert_eq!(TransactionType::Mixed.label(), "Mixed");
+    }
+
+    #[test]
+    fn test_sent_transaction_record() {
+        let mut record = SentTransactionRecord::new(
+            "abc123".to_string(),
+            "u1test".to_string(),
+            100_000_000,
+            10_000,
+            None,
+            vec!["note1".to_string()],
+        );
+
+        assert_eq!(record.status, TransactionStatus::Pending);
+        assert_eq!(record.confirmations, 0);
+
+        record.mark_broadcast();
+        assert!(record.broadcast_at.is_some());
+
+        let block_time = Utc::now();
+        record.mark_confirmed(1000, block_time, 1010);
+        assert_eq!(record.status, TransactionStatus::Confirmed);
+        assert_eq!(record.confirmations, 11);
+    }
+
+    #[test]
+    fn test_transaction_view_amounts() {
+        let record = SentTransactionRecord::new(
+            "abc123".to_string(),
+            "u1test".to_string(),
+            100_000_000,
+            10_000,
+            None,
+            vec![],
+        );
+
+        let view = TransactionView::from_sent_record(&record);
+        assert_eq!(view.amount_zec(), 1.0);
+        assert_eq!(view.fee_zec(), Some(0.0001));
+        assert_eq!(view.net_amount_zatoshis, -100_000_000);
+    }
+}
+
+pub struct SentTransactionStorage {
+    storage_path: std::path::PathBuf,
+    transactions: Arc<Mutex<HashMap<String, SentTransactionRecord>>>,
+}
+
+impl SentTransactionStorage {
+    pub fn new() -> NozyResult<Self> {
+        let data_dir = get_wallet_data_dir();
+        let storage = Self {
+            storage_path: data_dir.clone(),
+            transactions: Arc::new(Mutex::new(HashMap::new())),
+        };
+
+        storage.ensure_storage_directory()?;
+        storage.load_transactions()?;
+
+        Ok(storage)
+    }
+
+    pub fn with_path(storage_path: std::path::PathBuf) -> NozyResult<Self> {
+        let storage = Self {
+            storage_path: storage_path.clone(),
+            transactions: Arc::new(Mutex::new(HashMap::new())),
+        };
+
+        storage.ensure_storage_directory()?;
+        storage.load_transactions()?;
+
+        Ok(storage)
+    }
+
+    fn ensure_storage_directory(&self) -> NozyResult<()> {
+        if !self.storage_path.exists() {
+            fs::create_dir_all(&self.storage_path).map_err(|e| {
+                NozyError::Storage(format!("Failed to create storage directory: {}", e))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn get_transactions_path(&self) -> std::path::PathBuf {
+        self.storage_path.join("sent_transactions.json")
+    }
+
+    fn load_transactions(&self) -> NozyResult<()> {
+        let transactions_path = self.get_transactions_path();
+        let path = Path::new(&transactions_path);
+
+        if path.exists() {
+            let content = fs::read_to_string(path).map_err(|e| {
+                NozyError::Storage(format!("Failed to read sent transactions: {}", e))
+            })?;
+
+            let stored_transactions: HashMap<String, SentTransactionRecord> =
+                serde_json::from_str(&content).map_err(|e| {
+                    NozyError::Storage(format!("Failed to parse sent transactions: {}", e))
+                })?;
+
+            *self
+                .transactions
+                .lock()
+                .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))? =
+                stored_transactions;
+        }
+
+        Ok(())
+    }
+
+    fn save_transactions(&self) -> NozyResult<()> {
+        let transactions_path = self.get_transactions_path();
+        let transactions = self
+            .transactions
+            .lock()
+            .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?;
+        let content = serde_json::to_string_pretty(&*transactions).map_err(|e| {
+            NozyError::Storage(format!("Failed to serialize sent transactions: {}", e))
+        })?;
+
+        fs::write(&transactions_path, content)
+            .map_err(|e| NozyError::Storage(format!("Failed to write sent transactions: {}", e)))?;
+
+        Ok(())
+    }
+
+    pub fn save_transaction(&self, transaction: SentTransactionRecord) -> NozyResult<()> {
+        let txid = transaction.txid.clone();
+        {
+            let mut transactions = self
+                .transactions
+                .lock()
+                .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?;
+            transactions.insert(txid, transaction);
+        }
+        self.save_transactions()?;
+        Ok(())
+    }
+
+    pub fn get_transaction(&self, txid: &str) -> Option<SentTransactionRecord> {
+        self.transactions
+            .lock()
+            .map_err(|e| {
+                eprintln!("Warning: Mutex poisoned in get_transaction: {}", e);
+            })
+            .ok()
+            .and_then(|transactions| transactions.get(txid).cloned())
+    }
+
+    pub fn get_all_transactions(&self) -> Vec<SentTransactionRecord> {
+        self.transactions
+            .lock()
+            .map_err(|e| {
+                eprintln!("Warning: Mutex poisoned in get_all_transactions: {}", e);
+            })
+            .ok()
+            .map(|transactions| transactions.values().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    pub fn get_pending_transactions(&self) -> Vec<SentTransactionRecord> {
+        self.transactions
+            .lock()
+            .map_err(|e| {
+                eprintln!("Warning: Mutex poisoned in get_pending_transactions: {}", e);
+            })
+            .ok()
+            .map(|transactions| {
+                transactions
+                    .values()
+                    .filter(|tx| tx.status == TransactionStatus::Pending)
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    pub fn update_transaction_status(
+        &self,
+        txid: &str,
+        block_height: u32,
+        block_time: DateTime<Utc>,
+        current_height: u32,
+    ) -> NozyResult<bool> {
+        let mut updated = false;
+        {
+            let mut transactions = self
+                .transactions
+                .lock()
+                .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?;
+            if let Some(tx) = transactions.get_mut(txid) {
+                tx.mark_confirmed(block_height, block_time, current_height);
+                updated = true;
+            }
+        }
+
+        if updated {
+            self.save_transactions()?;
+        }
+
+        Ok(updated)
+    }
+
+    pub async fn check_transaction_confirmation(
+        &self,
+        zebra_client: &crate::zebra_integration::ZebraClient,
+        txid: &str,
+    ) -> NozyResult<bool> {
+        match zebra_client.get_transaction_info(txid).await {
+            Ok(tx_info) => {
+                if let Some(block_height) = tx_info.block_height {
+                    let current_height = zebra_client.get_block_count().await.unwrap_or(0);
+
+                    let block_time =
+                        if let Ok(block_data) = zebra_client.get_block(block_height).await {
+                            if let Some(time) = block_data.get("time").and_then(|v| v.as_u64()) {
+                                chrono::DateTime::from_timestamp(time as i64, 0)
+                                    .unwrap_or_else(|| Utc::now())
+                            } else {
+                                Utc::now()
+                            }
+                        } else {
+                            Utc::now()
+                        };
+
+                    let was_updated = self.update_transaction_status(
+                        txid,
+                        block_height,
+                        block_time,
+                        current_height,
+                    )?;
+
+                    if was_updated {
+                        let _ = self.mark_spent_notes_for_confirmed_transactions();
+                    }
+
+                    return Ok(was_updated);
+                }
+                Ok(false)
+            }
+            Err(_) => Ok(false),
+        }
+    }
+
+    pub async fn check_all_pending_transactions(
+        &self,
+        zebra_client: &crate::zebra_integration::ZebraClient,
+    ) -> NozyResult<usize> {
+        let pending = self.get_pending_transactions();
+        let mut updated_count = 0;
+
+        for tx in pending {
+            if self
+                .check_transaction_confirmation(zebra_client, &tx.txid)
+                .await?
+            {
+                updated_count += 1;
+            }
+
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        }
+
+        if updated_count > 0 {
+            let _ = self.mark_spent_notes_for_confirmed_transactions();
+        }
+
+        Ok(updated_count)
+    }
+
+    pub async fn update_confirmations(
+        &self,
+        zebra_client: &crate::zebra_integration::ZebraClient,
+    ) -> NozyResult<usize> {
+        let current_height = zebra_client.get_block_count().await.unwrap_or(0);
+        let mut updated_count = 0;
+
+        {
+            let mut transactions = self
+                .transactions
+                .lock()
+                .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?;
+            for tx in transactions.values_mut() {
+                if let Some(block_height) = tx.block_height {
+                    let new_confirmations = current_height.saturating_sub(block_height) + 1;
+                    if new_confirmations != tx.confirmations {
+                        tx.confirmations = new_confirmations;
+                        updated_count += 1;
+                    }
+                }
+            }
+        }
+
+        if updated_count > 0 {
+            self.save_transactions()?;
+        }
+
+        Ok(updated_count)
+    }
+
+    pub fn mark_spent_notes_for_confirmed_transactions(&self) -> NozyResult<usize> {
+        use crate::paths::get_wallet_data_dir;
+        use std::fs;
+
+        let notes_path = get_wallet_data_dir().join("notes.json");
+        if !notes_path.exists() {
+            return Ok(0);
+        }
+
+        let confirmed_txs: Vec<(String, Vec<String>)> = {
+            self.transactions.lock()
+                .map_err(|e| {
+                    eprintln!("Warning: Mutex poisoned in mark_spent_notes_for_confirmed_transactions: {}", e);
+                })
+                .ok()
+                .map(|transactions| transactions
+                    .values()
+                    .filter(|tx| tx.status == TransactionStatus::Confirmed)
+                    .map(|tx| (tx.txid.clone(), tx.spent_note_ids.clone()))
+                    .collect())
+                .unwrap_or_default()
+        };
+
+        if confirmed_txs.is_empty() {
+            return Ok(0);
+        }
+
+        let content = fs::read_to_string(&notes_path)
+            .map_err(|e| NozyError::Storage(format!("Failed to read notes: {}", e)))?;
+
+        let mut notes: Vec<crate::notes::SerializableOrchardNote> = serde_json::from_str(&content)
+            .map_err(|e| NozyError::Storage(format!("Failed to parse notes: {}", e)))?;
+
+        let spent_nullifiers: std::collections::HashSet<Vec<u8>> = confirmed_txs
+            .iter()
+            .flat_map(|(_, note_ids)| note_ids.iter())
+            .filter_map(|note_id_hex| hex::decode(note_id_hex).ok())
+            .collect();
+
+        let mut marked_count = 0;
+        for note in &mut notes {
+            if !note.spent && spent_nullifiers.contains(&note.nullifier_bytes) {
+                note.spent = true;
+                marked_count += 1;
+            }
+        }
+
+        if marked_count > 0 {
+            let serialized = serde_json::to_string_pretty(&notes)
+                .map_err(|e| NozyError::Storage(format!("Failed to serialize notes: {}", e)))?;
+            fs::write(&notes_path, serialized)
+                .map_err(|e| NozyError::Storage(format!("Failed to write notes: {}", e)))?;
+        }
+
+        Ok(marked_count)
+    }
+
+    pub fn mark_transaction_failed(&self, txid: &str) -> NozyResult<bool> {
+        let mut updated = false;
+        {
+            let mut transactions = self
+                .transactions
+                .lock()
+                .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?;
+            if let Some(tx) = transactions.get_mut(txid) {
+                tx.mark_failed();
+                updated = true;
+            }
+        }
+
+        if updated {
+            self.save_transactions()?;
+        }
+
+        Ok(updated)
+    }
+
+    pub fn remove_transaction(&self, txid: &str) -> NozyResult<bool> {
+        let removed = {
+            let mut transactions = self
+                .transactions
+                .lock()
+                .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?;
+            transactions.remove(txid).is_some()
+        };
+
+        if removed {
+            self.save_transactions()?;
+        }
+
+        Ok(removed)
+    }
+
+    pub fn count(&self) -> usize {
+        self.transactions
+            .lock()
+            .map_err(|e| {
+                eprintln!("Warning: Mutex poisoned in count: {}", e);
+            })
+            .ok()
+            .map(|transactions| transactions.len())
+            .unwrap_or(0)
+    }
+
+    pub fn query_transactions(
+        &self,
+        status_filter: Option<TransactionStatus>,
+        min_amount: Option<u64>,
+        max_amount: Option<u64>,
+        start_date: Option<DateTime<Utc>>,
+        end_date: Option<DateTime<Utc>>,
+        recipient_filter: Option<&str>,
+    ) -> Vec<SentTransactionRecord> {
+        let transactions = self
+            .transactions
+            .lock()
+            .map_err(|e| {
+                eprintln!("Warning: Mutex poisoned in query_transactions: {}", e);
+            })
+            .ok();
+
+        if let Some(transactions) = transactions {
+            transactions
+                .values()
+                .filter(|tx| {
+                    if let Some(ref status) = status_filter {
+                        if tx.status != *status {
+                            return false;
+                        }
+                    }
+
+                    if let Some(min) = min_amount {
+                        if tx.amount_zatoshis < min {
+                            return false;
+                        }
+                    }
+                    if let Some(max) = max_amount {
+                        if tx.amount_zatoshis > max {
+                            return false;
+                        }
+                    }
+
+                    if let Some(start) = start_date {
+                        if tx.created_at < start {
+                            return false;
+                        }
+                    }
+                    if let Some(end) = end_date {
+                        if tx.created_at > end {
+                            return false;
+                        }
+                    }
+
+                    if let Some(recipient) = recipient_filter {
+                        if !tx.recipient_address.contains(recipient) {
+                            return false;
+                        }
+                    }
+
+                    true
+                })
+                .cloned()
+                .collect()
+        } else {
+            Vec::new()
+        }
+    }
+
+    pub fn get_transactions_sorted(&self, limit: Option<usize>) -> Vec<SentTransactionRecord> {
+        let mut transactions = self.get_all_transactions();
+        transactions.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+
+        if let Some(limit) = limit {
+            transactions.truncate(limit);
+        }
+
+        transactions
+    }
+
+    pub fn get_transactions_by_recipient(&self, recipient: &str) -> Vec<SentTransactionRecord> {
+        self.query_transactions(None, None, None, None, None, Some(recipient))
+    }
+
+    pub fn get_transactions_in_range(
+        &self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    ) -> Vec<SentTransactionRecord> {
+        self.query_transactions(None, None, None, Some(start), Some(end), None)
+    }
+
+    pub fn get_total_sent_in_range(&self, start: DateTime<Utc>, end: DateTime<Utc>) -> u64 {
+        self.get_transactions_in_range(start, end)
+            .iter()
+            .map(|tx| tx.amount_zatoshis)
+            .sum()
+    }
+
+    pub fn get_statistics(&self) -> TransactionStatistics {
+        let transactions = self
+            .transactions
+            .lock()
+            .map_err(|e| {
+                eprintln!("Warning: Mutex poisoned in get_statistics: {}", e);
+            })
+            .ok();
+
+        if let Some(transactions) = transactions {
+            let total_count = transactions.len();
+            let pending_count = transactions
+                .values()
+                .filter(|tx| tx.status == TransactionStatus::Pending)
+                .count();
+            let confirmed_count = transactions
+                .values()
+                .filter(|tx| tx.status == TransactionStatus::Confirmed)
+                .count();
+            let failed_count = transactions
+                .values()
+                .filter(|tx| tx.status == TransactionStatus::Failed)
+                .count();
+
+            let total_sent: u64 = transactions.values().map(|tx| tx.amount_zatoshis).sum();
+            let total_fees: u64 = transactions.values().map(|tx| tx.fee_zatoshis).sum();
+
+            TransactionStatistics {
+                total_count,
+                pending_count,
+                confirmed_count,
+                failed_count,
+                total_sent_zatoshis: total_sent,
+                total_fees_zatoshis: total_fees,
+            }
+        } else {
+            TransactionStatistics {
+                total_count: 0,
+                pending_count: 0,
+                confirmed_count: 0,
+                failed_count: 0,
+                total_sent_zatoshis: 0,
+                total_fees_zatoshis: 0,
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TransactionStatistics {
+    pub total_count: usize,
+    pub pending_count: usize,
+    pub confirmed_count: usize,
+    pub failed_count: usize,
+    pub total_sent_zatoshis: u64,
+    pub total_fees_zatoshis: u64,
+}
