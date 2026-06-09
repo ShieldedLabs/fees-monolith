@@ -14,6 +14,7 @@ use zaino_fetch::jsonrpsee::response::{
     peer_info::GetPeerInfo,
     z_validate_address::ZValidateAddressResponse,
     GetMempoolInfoResponse, GetNetworkSolPsResponse, GetSpentInfoRequest, GetSpentInfoResponse,
+    GetTxOutSetInfoResponse,
 };
 use zaino_proto::proto::{
     compact_formats::CompactBlock,
@@ -559,6 +560,13 @@ pub trait ZcashIndexer: Send + Sync + 'static {
     /// `zcashd` reference (may be outdated): [`getmininginfo`](https://zcash.github.io/rpc/getmininginfo.html)
     async fn get_mining_info(&self) -> Result<GetMiningInfoWire, Self::Error>;
 
+    /// Returns statistics about the unspent transaction output set.
+    ///
+    /// zcashd reference: [`gettxoutsetinfo`](https://zcash.github.io/rpc/gettxoutsetinfo.html)
+    /// method: post
+    /// tags: blockchain
+    async fn get_tx_out_set_info(&self) -> Result<GetTxOutSetInfoResponse, Self::Error>;
+
     /// Returns the estimated network solutions per second based on the last n blocks.
     ///
     /// zcashd reference: [`getnetworksolps`](https://zcash.github.io/rpc/getnetworksolps.html)
@@ -896,6 +904,8 @@ pub trait LightWalletIndexer: Send + Sync + Clone + ZcashIndexer + 'static {
     ///
     /// Ignores all utxos below block height [GetAddressUtxosArg.start_height].
     /// Returns max [GetAddressUtxosArg.max_entries] utxos, or unrestricted if [GetAddressUtxosArg.max_entries] = 0.
+    /// max_entries bounds the response size, not the backend work; the address list is
+    /// capped server-side to bound backend fan-out (see UTXO_MAX_ADDRESSES in backends).
     /// Utxos are collected and returned as a single Vec.
     async fn get_address_utxos(
         &self,
@@ -906,6 +916,8 @@ pub trait LightWalletIndexer: Send + Sync + Clone + ZcashIndexer + 'static {
     ///
     /// Ignores all utxos below block height [GetAddressUtxosArg.start_height].
     /// Returns max [GetAddressUtxosArg.max_entries] utxos, or unrestricted if [GetAddressUtxosArg.max_entries] = 0.
+    /// max_entries bounds the response size, not the backend work; the address list is
+    /// capped server-side to bound backend fan-out (see UTXO_MAX_ADDRESSES in backends).
     /// Utxos are returned in a stream.
     async fn get_address_utxos_stream(
         &self,
