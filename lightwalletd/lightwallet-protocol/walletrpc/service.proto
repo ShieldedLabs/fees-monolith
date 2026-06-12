@@ -222,7 +222,7 @@ message GetAddressUtxosReplyList {
 // StandardFeesResponse returns the recommended standard and priority fees.
 message StandardFeesResponse {
     uint64 standardFee = 1;            // Recommended fee per logical action in zatoshis
-    uint64 priorityFee = 2;            // Priority fee (always 10x standardFee)
+    uint64 priorityFee = 2;            // Priority fee (always 4x standardFee, the ZIP-317 weight-ratio cap)
     bool congested = 3;                // True iff paying priority buys faster inclusion
     string version = 4;                // Estimator version (e.g. "v0")
     uint64 height = 5;                 // Chain tip height at computation time
