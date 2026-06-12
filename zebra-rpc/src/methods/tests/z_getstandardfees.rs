@@ -71,8 +71,10 @@ async fn z_getstandardfees_happy_path() {
         .await
         .expect("rpc task should not panic")
         .expect("rpc should succeed");
-    assert_eq!(response.standard_fee, 10);
-    assert_eq!(response.priority_fee, 100);
+    // The window's median per-action fee is far below the 5000-zat floor, so the
+    // response pins to the floor lane and its 4x priority lane.
+    assert_eq!(response.standard_fee, 5000);
+    assert_eq!(response.priority_fee, 20000);
 
     mempool.expect_no_requests().await;
     state.expect_no_requests().await;

@@ -2807,7 +2807,11 @@ where
     async fn z_getstandardfees(&self) -> Result<ZGetStandardFeesResponse> {
         const REORG_BUFFER: u32 = 5;
         const LOOKBACK_WINDOW: u32 = 50;
-        const PRIORITY_MULTIPLIER: u64 = 10;
+        // Current mainnet ZIP-317 params: 5000-zat marginal fee and a 4x priority
+        // lane (the weight-ratio cap), matching the lanes `z_getfeedistribution`
+        // reports. These move to 1000 / 10x once the marginal-fee reduction ships.
+        const PRIORITY_MULTIPLIER: u64 = 4;
+        const FLOOR_FEE: u64 = 5000;
         const NOT_ENOUGH_BLOCKS: &str = "not enough blocks to calculate median fee";
         const BLOCK_NOT_FOUND: &str = "block not found while calculating median fee";
 
@@ -2881,7 +2885,7 @@ where
             let index = (per_action_fees.len() - 1) / 2;
             per_action_fees[index]
         };
-        let standard_zats = bucket_fee_power_of_10(median_zats);
+        let standard_zats = FLOOR_FEE.max(bucket_fee_alphabet(median_zats));
         let priority_zats = standard_zats.saturating_mul(PRIORITY_MULTIPLIER);
 
         Ok(ZGetStandardFeesResponse {
@@ -3428,30 +3432,9 @@ where
         .ok_or_misc_error("No blocks in state")
 }
 
-fn bucket_fee_power_of_10(value: u64) -> u64 {
-    if value == 0 {
-        return 0;
-    }
-
-    let mut lower = 1u64;
-    while lower <= value / 10 {
-        lower *= 10;
-    }
-
-    let upper = lower.saturating_mul(10);
-    let lower_distance = value.saturating_sub(lower);
-    let upper_distance = upper.saturating_sub(value);
-
-    if upper_distance <= lower_distance {
-        upper
-    } else {
-        lower
-    }
-}
-
 /// Buckets a per-action fee to the 5,000 * 4^n fee alphabet (nearest by distance).
-/// Used by `z_getfeedistribution` for the usage histogram; consistent with the
-/// fixed 5,000 standard / 20,000 priority lanes.
+/// Used by `z_getstandardfees` and the `z_getfeedistribution` usage histogram;
+/// consistent with the fixed 5,000 standard / 20,000 priority lanes.
 fn bucket_fee_alphabet(value: u64) -> u64 {
     const BASE: u64 = 5000;
     const STEP: u64 = 4;
