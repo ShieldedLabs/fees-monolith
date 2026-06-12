@@ -5,6 +5,69 @@ All notable changes to Zebra are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [Unreleased]
+
+## [Zebra 5.1.0](https://github.com/ZcashFoundation/zebra/releases/tag/v5.1.0) - 2026-06-10
+
+This release fixes a genesis-to-tip sync stall that could cause new nodes to hang
+during initial block download, bumps the minimum network protocol version to NU6.2,
+extends the `getpeerinfo` RPC, and includes several performance and correctness fixes.
+
+### Breaking Changes
+
+- The minimum network protocol version is now NU6.2 (170150). Peers running protocol
+  versions below NU6.2 will be disconnected. Update to Zebra 5.0.0 or later to remain
+  compatible ([#10692](https://github.com/ZcashFoundation/zebra/pull/10692)).
+
+### Added
+
+- Extended `getpeerinfo` RPC with `subver`, `version`, `services`, `lastrecv`,
+  `banscore`, and `connection_state` fields ([#10443](https://github.com/ZcashFoundation/zebra/pull/10443))
+
+### Fixed
+
+- Fixed genesis-to-tip sync stall that could cause new nodes to hang during initial
+  block download ([#10679](https://github.com/ZcashFoundation/zebra/pull/10679))
+- Fixed mempool index being unnecessarily rebuilt per transaction in `getrawmempool`
+  ([#10599](https://github.com/ZcashFoundation/zebra/pull/10599))
+- Fixed `dequeue_children` by-height index handling in the state service
+  ([#10604](https://github.com/ZcashFoundation/zebra/pull/10604))
+
+### Contributors
+
+Thank you to everyone who contributed to this release:
+@andres-pcg, @conradoplg, @gustavovalverde, @judah-caruso, @oxarbitrage, @syszery and @upbqdn
+
+## [Zebra 5.0.0](https://github.com/ZcashFoundation/zebra/releases/tag/v5.0.0) - 2026-06-02
+
+This release activates the NU6.2 network upgrade. NU6.2 re-enables Orchard
+actions (temporarily disabled by the 4.5.3 soft fork) using the fixed Orchard
+Action circuit, which fixes a **critical** bug in the Orchard pool. NU6.2
+activates at block height 3,364,600 on Mainnet and 4,052,000 on Testnet. We
+recommend node operators update before the activation height.
+
+If the activation height has passed and your node followed a fork, you will need
+to sync from scratch. If you have a backed-up state before the activation
+height, you can sync from that.
+
+### Added
+
+- Activate the NU6.2 network upgrade (consensus branch id `0x5437f330`) at height 3,364,600
+  on Mainnet and 4,052,000 on Testnet. NU6.2 re-enables Orchard actions with the fixed
+  Orchard Action circuit and routes Orchard proofs to a per-circuit verifying key
+  (`InsecurePreNu6_2` / `FixedPostNu6_2`).
+- Advertise network protocol version 170150 for NU6.2 on Mainnet, Testnet, and Regtest.
+
+### Changed
+
+- Set the default Testnet temporary Orchard-disabling soft-fork height to 4,048,500; the
+  disable window runs until NU6.2 re-enables Orchard actions at height 4,052,000.
+
+### Security
+
+- Add a consensus rule that rejects Orchard bundles whose proof has a non-canonical size,
+  effective from the NU6.2 network upgrade (GHSA-jfw5-j458-pfv6).
+
 ## [Zebra 4.5.3](https://github.com/ZcashFoundation/zebra/releases/tag/v4.5.3) - 2026-06-01
 
 This hotfix release adds a soft fork that temporarily disables Orchard actions in
