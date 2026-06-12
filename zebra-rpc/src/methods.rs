@@ -60,7 +60,7 @@ use tracing::Instrument;
 use zcash_address::{unified::Encoding, TryFromAddress};
 use zcash_protocol::consensus::{self, Parameters};
 use zebra_chain::{
-    amount::{Amount, NegativeAllowed},
+    amount::{Amount, NegativeAllowed, NonNegative},
     block::{self, Block, Commitment, Height, SerializedBlock, TryIntoHeight},
     chain_sync_status::ChainSyncStatus,
     chain_tip::{ChainTip, NetworkChainTipHeightEstimator},
@@ -133,6 +133,8 @@ use types::{
     transaction::TransactionObject,
     unified_address::ZListUnifiedReceiversResponse,
     validate_address::ValidateAddressResponse,
+    z_getfeedistribution::{FeeSample, ZGetFeeDistributionResponse},
+    z_getstandardfees::ZGetStandardFeesResponse,
     z_validate_address::ZValidateAddressResponse,
 };
 
@@ -629,6 +631,22 @@ pub trait Rpc {
     /// - `address`: (string, required) The zcash address to validate.
     #[method(name = "validateaddress")]
     async fn validate_address(&self, address: String) -> Result<ValidateAddressResponse>;
+
+    /// Returns standard and priority fees based on the median per-action fee,
+    /// bucketed to the nearest power of 10.
+    ///
+    /// method: post
+    /// tags: fees
+    #[method(name = "z_getstandardfees")]
+    async fn z_getstandardfees(&self) -> Result<ZGetStandardFeesResponse>;
+
+    /// Returns the distribution of per-action fees paid by real transactions
+    /// in the estimator lookback window (companion to `z_getstandardfees`).
+    ///
+    /// method: post
+    /// tags: fees
+    #[method(name = "z_getfeedistribution")]
+    async fn z_getfeedistribution(&self) -> Result<ZGetFeeDistributionResponse>;
 
     /// Checks if a zcash address of type P2PKH, P2SH, TEX, SAPLING or UNIFIED is valid.
     /// Returns information about the given address if valid.
@@ -1634,6 +1652,10 @@ where
                 last_seen_tip_hash: _,
             } => {
                 if verbose {
+                    let transactions_by_id = transactions
+                        .iter()
+                        .map(|unmined_tx| (unmined_tx.transaction.id.mined_id(), unmined_tx))
+                        .collect::<HashMap<_, _>>();
                     let map = transactions
                         .iter()
                         .map(|unmined_tx| {
@@ -1641,7 +1663,7 @@ where
                                 unmined_tx.transaction.id.mined_id().encode_hex(),
                                 get_raw_mempool::MempoolObject::from_verified_unmined_tx(
                                     unmined_tx,
-                                    &transactions,
+                                    &transactions_by_id,
                                     &transaction_dependencies,
                                 ),
                             )
@@ -2782,6 +2804,230 @@ where
         validate_address(network, raw_address)
     }
 
+    async fn z_getstandardfees(&self) -> Result<ZGetStandardFeesResponse> {
+        const REORG_BUFFER: u32 = 5;
+        const LOOKBACK_WINDOW: u32 = 50;
+        const PRIORITY_MULTIPLIER: u64 = 10;
+        const NOT_ENOUGH_BLOCKS: &str = "not enough blocks to calculate median fee";
+        const BLOCK_NOT_FOUND: &str = "block not found while calculating median fee";
+
+        let tip_height = best_chain_tip_height(&self.latest_chain_tip)?;
+
+        let end_height = tip_height
+            .0
+            .checked_sub(REORG_BUFFER)
+            .ok_or_misc_error(NOT_ENOUGH_BLOCKS)?;
+
+        let start_height = end_height
+            .checked_sub(LOOKBACK_WINDOW - 1)
+            .ok_or_misc_error(NOT_ENOUGH_BLOCKS)?;
+
+        let mut read_state = self.read_state.clone();
+        let mut tx_cache: HashMap<transaction::Hash, (Arc<Transaction>, block::Height)> =
+            HashMap::new();
+        let mut per_action_fees: Vec<u64> = Vec::new();
+
+        for height in start_height..=end_height {
+            let request = ReadRequest::Block(HashOrHeight::Height(block::Height(height)));
+            let response = read_state
+                .ready()
+                .and_then(|service| service.call(request))
+                .await
+                .map_error(server::error::LegacyCode::default())?;
+
+            let block = match response {
+                ReadResponse::Block(Some(block)) => block,
+                ReadResponse::Block(None) => {
+                    return Err(ErrorObject::borrowed(
+                        server::error::LegacyCode::Misc.into(),
+                        BLOCK_NOT_FOUND,
+                        None,
+                    ))
+                }
+                _ => unreachable!("unmatched response to a block request"),
+            };
+
+            let mut block_outputs: HashMap<transparent::OutPoint, transparent::Output> =
+                HashMap::new();
+
+            for transaction in &block.transactions {
+                if !transaction.is_coinbase() {
+                    let fee = calculate_transaction_fee(
+                        &mut read_state,
+                        &mut tx_cache,
+                        transaction,
+                        &block_outputs,
+                    )
+                    .await?;
+
+                    if let Some(fee) = fee {
+                        let actions = transaction::zip317::conventional_actions(transaction) as u64;
+                        per_action_fees.push(fee.zatoshis() as u64 / actions);
+                    }
+                }
+
+                let tx_hash = transaction.hash();
+                for (index, output) in transaction.outputs().iter().enumerate() {
+                    let outpoint = transparent::OutPoint::from_usize(tx_hash, index);
+                    block_outputs.insert(outpoint, output.clone());
+                }
+            }
+        }
+
+        let median_zats = if per_action_fees.is_empty() {
+            0
+        } else {
+            per_action_fees.sort_unstable();
+            let index = (per_action_fees.len() - 1) / 2;
+            per_action_fees[index]
+        };
+        let standard_zats = bucket_fee_power_of_10(median_zats);
+        let priority_zats = standard_zats.saturating_mul(PRIORITY_MULTIPLIER);
+
+        Ok(ZGetStandardFeesResponse {
+            standard_fee: standard_zats,
+            priority_fee: priority_zats,
+        })
+    }
+
+    async fn z_getfeedistribution(&self) -> Result<ZGetFeeDistributionResponse> {
+        use std::collections::BTreeMap;
+
+        const REORG_BUFFER: u32 = 5;
+        const LOOKBACK_WINDOW: u32 = 50;
+        const NOT_ENOUGH_BLOCKS: &str = "not enough blocks to calculate fee distribution";
+        const BLOCK_NOT_FOUND: &str = "block not found while calculating fee distribution";
+        const MAX_SAMPLES: usize = 2000;
+
+        let tip_height = best_chain_tip_height(&self.latest_chain_tip)?;
+        let tip_u64 = tip_height.0 as u64;
+
+        let end_height = tip_height
+            .0
+            .checked_sub(REORG_BUFFER)
+            .ok_or_misc_error(NOT_ENOUGH_BLOCKS)?;
+
+        let start_height = end_height
+            .checked_sub(LOOKBACK_WINDOW - 1)
+            .ok_or_misc_error(NOT_ENOUGH_BLOCKS)?;
+
+        let mut read_state = self.read_state.clone();
+        let mut tx_cache: HashMap<transaction::Hash, (Arc<Transaction>, block::Height)> =
+            HashMap::new();
+        // (txid, total fee, conventional actions, fee per action) for each real tx.
+        let mut samples: Vec<(String, u64, u64, u64)> = Vec::new();
+
+        for height in start_height..=end_height {
+            let request = ReadRequest::Block(HashOrHeight::Height(block::Height(height)));
+            let response = read_state
+                .ready()
+                .and_then(|service| service.call(request))
+                .await
+                .map_error(server::error::LegacyCode::default())?;
+
+            let block = match response {
+                ReadResponse::Block(Some(block)) => block,
+                ReadResponse::Block(None) => {
+                    return Err(ErrorObject::borrowed(
+                        server::error::LegacyCode::Misc.into(),
+                        BLOCK_NOT_FOUND,
+                        None,
+                    ))
+                }
+                _ => unreachable!("unmatched response to a block request"),
+            };
+
+            let mut block_outputs: HashMap<transparent::OutPoint, transparent::Output> =
+                HashMap::new();
+
+            for transaction in &block.transactions {
+                if !transaction.is_coinbase() {
+                    let fee = calculate_transaction_fee(
+                        &mut read_state,
+                        &mut tx_cache,
+                        transaction,
+                        &block_outputs,
+                    )
+                    .await?;
+
+                    if let Some(fee) = fee {
+                        let actions = transaction::zip317::conventional_actions(transaction) as u64;
+                        let fee_zats = fee.zatoshis() as u64;
+                        samples.push((
+                            transaction.hash().to_string(),
+                            fee_zats,
+                            actions,
+                            fee_zats / actions,
+                        ));
+                    }
+                }
+
+                let tx_hash = transaction.hash();
+                for (index, output) in transaction.outputs().iter().enumerate() {
+                    let outpoint = transparent::OutPoint::from_usize(tx_hash, index);
+                    block_outputs.insert(outpoint, output.clone());
+                }
+            }
+        }
+
+        // Classify against the fixed ZIP-317 conventional lanes: standard is exactly the
+        // 5,000-zat conventional fee per action, priority is exactly 4x (20,000). Anything
+        // else (under, over, or between) is nonstandard. These lanes are fixed, distinct
+        // from the dynamic `z_getstandardfees` estimate.
+        const STANDARD_LANE: u64 = 5000;
+        const PRIORITY_LANE: u64 = 20000;
+        let standard_fee = STANDARD_LANE;
+        let priority_fee = PRIORITY_LANE;
+
+        let mut total_tx_count: u64 = 0;
+        let mut standard_count: u64 = 0;
+        let mut priority_count: u64 = 0;
+        let mut nonstandard_count: u64 = 0;
+        let mut distribution: BTreeMap<u64, u64> = BTreeMap::new();
+        let mut transactions: Vec<FeeSample> = Vec::new();
+
+        for (txid, fee, actions, fee_per_action) in samples {
+            total_tx_count += 1;
+            *distribution
+                .entry(bucket_fee_alphabet(fee_per_action))
+                .or_default() += 1;
+
+            let tier = if fee_per_action == PRIORITY_LANE {
+                priority_count += 1;
+                "priority"
+            } else if fee_per_action == STANDARD_LANE {
+                standard_count += 1;
+                "standard"
+            } else {
+                nonstandard_count += 1;
+                "nonstandard"
+            };
+
+            if transactions.len() < MAX_SAMPLES {
+                transactions.push(FeeSample {
+                    txid,
+                    fee,
+                    actions,
+                    fee_per_action,
+                    tier: tier.to_string(),
+                });
+            }
+        }
+
+        Ok(ZGetFeeDistributionResponse::new(
+            standard_fee,
+            priority_fee,
+            total_tx_count,
+            standard_count,
+            priority_count,
+            nonstandard_count,
+            distribution,
+            transactions,
+            "v0".to_string(),
+            tip_u64,
+        ))
+    }
+
     async fn z_validate_address(&self, raw_address: String) -> Result<ZValidateAddressResponse> {
         let network = self.network.clone();
 
@@ -3180,6 +3426,154 @@ where
     latest_chain_tip
         .best_tip_height()
         .ok_or_misc_error("No blocks in state")
+}
+
+fn bucket_fee_power_of_10(value: u64) -> u64 {
+    if value == 0 {
+        return 0;
+    }
+
+    let mut lower = 1u64;
+    while lower <= value / 10 {
+        lower *= 10;
+    }
+
+    let upper = lower.saturating_mul(10);
+    let lower_distance = value.saturating_sub(lower);
+    let upper_distance = upper.saturating_sub(value);
+
+    if upper_distance <= lower_distance {
+        upper
+    } else {
+        lower
+    }
+}
+
+/// Buckets a per-action fee to the 5,000 * 4^n fee alphabet (nearest by distance).
+/// Used by `z_getfeedistribution` for the usage histogram; consistent with the
+/// fixed 5,000 standard / 20,000 priority lanes.
+fn bucket_fee_alphabet(value: u64) -> u64 {
+    const BASE: u64 = 5000;
+    const STEP: u64 = 4;
+
+    if value == 0 {
+        return 0;
+    }
+    if value <= BASE {
+        return BASE;
+    }
+
+    let mut lower = BASE;
+    while lower.saturating_mul(STEP) <= value {
+        lower = lower.saturating_mul(STEP);
+    }
+
+    let upper = lower.saturating_mul(STEP);
+    let lower_distance = value.saturating_sub(lower);
+    let upper_distance = upper.saturating_sub(value);
+
+    if lower_distance <= upper_distance {
+        lower
+    } else {
+        upper
+    }
+}
+
+async fn calculate_transaction_fee<S>(
+    read_state: &mut S,
+    tx_cache: &mut HashMap<transaction::Hash, (Arc<Transaction>, block::Height)>,
+    transaction: &Arc<Transaction>,
+    block_outputs: &HashMap<transparent::OutPoint, transparent::Output>,
+) -> Result<Option<Amount<NonNegative>>>
+where
+    S: ReadStateService,
+{
+    if transaction.is_coinbase() {
+        return Ok(None);
+    }
+
+    let mut spent_utxos: HashMap<transparent::OutPoint, transparent::Utxo> = HashMap::new();
+
+    for input in transaction.inputs() {
+        if let transparent::Input::PrevOut { outpoint, .. } = input {
+            if let Some(output) = block_outputs.get(outpoint) {
+                spent_utxos.insert(
+                    *outpoint,
+                    transparent::Utxo::new(output.clone(), block::Height(0), false),
+                );
+                continue;
+            }
+
+            let (prev_tx, prev_height) = if let Some(cached) = tx_cache.get(&outpoint.hash) {
+                cached.clone()
+            } else {
+                let request = ReadRequest::Transaction(outpoint.hash);
+                let response = read_state
+                    .ready()
+                    .and_then(|service| service.call(request))
+                    .await
+                    .map_error(server::error::LegacyCode::default())?;
+
+                let mined_tx = match response {
+                    ReadResponse::Transaction(Some(mined_tx)) => mined_tx,
+                    ReadResponse::Transaction(None) => {
+                        return Err(ErrorObject::borrowed(
+                            ErrorCode::InternalError.code(),
+                            "referenced transaction not found",
+                            None,
+                        ))
+                    }
+                    _ => unreachable!("unmatched response to a transaction request"),
+                };
+
+                let entry = (mined_tx.tx, mined_tx.height);
+                tx_cache.insert(outpoint.hash, entry.clone());
+                entry
+            };
+
+            let output = prev_tx
+                .outputs()
+                .get(outpoint.index as usize)
+                .ok_or_else(|| {
+                    ErrorObject::borrowed(
+                        ErrorCode::InternalError.code(),
+                        "referenced output not found",
+                        None,
+                    )
+                })?;
+
+            let from_coinbase = prev_tx.is_coinbase();
+            spent_utxos.insert(
+                *outpoint,
+                transparent::Utxo::new(output.clone(), prev_height, from_coinbase),
+            );
+        }
+    }
+
+    let value_balance = transaction.value_balance(&spent_utxos).map_err(|_| {
+        ErrorObject::borrowed(
+            ErrorCode::InternalError.code(),
+            "failed to compute transaction value balance",
+            None,
+        )
+    })?;
+    let remaining_value = value_balance.remaining_transaction_value().map_err(|_| {
+        ErrorObject::borrowed(
+            ErrorCode::InternalError.code(),
+            "failed to compute transaction remaining value",
+            None,
+        )
+    })?;
+    let zip233_amount = transaction.zip233_amount();
+    let fee = (remaining_value - zip233_amount).map_err(|_| {
+        ErrorObject::borrowed(
+            ErrorCode::InternalError.code(),
+            "failed to compute transaction fee",
+            None,
+        )
+    })?;
+
+    Ok(Some(fee))
 }
 
 /// Response to a `getinfo` RPC request.
