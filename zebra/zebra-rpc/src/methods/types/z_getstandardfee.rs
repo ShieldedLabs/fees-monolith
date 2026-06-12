@@ -10,9 +10,10 @@ pub struct ZGetStandardFeeResponse {
     #[getter(copy)]
     pub(crate) standard_fee: u64,
 
-    /// Priority fee per logical action, in zatoshis. Always 10× the standard fee.
-    /// Wallets may surface this as a higher-priority option for users who want
-    /// faster inclusion when the network is congested.
+    /// Priority fee per logical action, in zatoshis. Always 4x the standard fee
+    /// (the ZIP-317 weight-ratio cap). Wallets may surface this as a
+    /// higher-priority option for users who want faster inclusion when the
+    /// network is congested.
     #[getter(copy)]
     pub(crate) priority_fee: u64,
 

@@ -43,7 +43,11 @@ fn make_block_with_size(
 }
 
 fn make_coinbase_tx(height: u32, value_zats: i64) -> Arc<Transaction> {
-    let input = transparent::Input::new_coinbase(Height(height), vec![], None);
+    let input = transparent::Input::Coinbase {
+        height: Height(height),
+        data: vec![],
+        sequence: 0,
+    };
     let output = transparent::Output::new(
         Amount::<NonNegative>::new(value_zats),
         transparent::Script::new(&[]),
@@ -208,6 +212,10 @@ async fn z_getfeedistribution_happy_path() {
     let counted: u64 = response.distribution.values().sum();
     assert_eq!(counted, 50);
     assert_eq!(response.transactions.len(), 50);
+    assert!(response
+        .transactions
+        .iter()
+        .all(|sample| sample.tier == "nonstandard"));
 
     mempool.expect_no_requests().await;
     state.expect_no_requests().await;
