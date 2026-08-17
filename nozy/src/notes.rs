@@ -19,7 +19,7 @@ use orchard::{
     note::{Note, Nullifier},
     Address as OrchardAddress,
 };
-use zcash_primitives::zip32::AccountId;
+use zip32::AccountId;
 
 use zcash_note_encryption::try_compact_note_decryption;
 
@@ -370,6 +370,18 @@ impl NoteScanner {
             }
         }
 
+        // Drop notes spent on-chain (flagged by the per-action spend detection above)
+        // so the returned spendable set never contains an already-spent note. Without
+        // this, a note spent by a prior send is still offered for selection and the
+        // next send self-double-spends with a duplicate nullifier.
+        spendable_notes.retain(|sn| {
+            let nf = sn.orchard_note.nullifier.to_bytes();
+            !note_index
+                .get_note_by_nullifier(&nf)
+                .map(|n| n.spent)
+                .unwrap_or(false)
+        });
+
         pb.finish_with_message("Scanning complete!");
 
         let total_balance = note_index.total_balance();
@@ -415,6 +427,19 @@ impl NoteScanner {
                 let cmx_node = merkle_hash_from_cmx_bytes(&action.cmx)?;
                 if let Some(tr) = witness_tracker.as_mut() {
                     tr.append_cmx(cmx_node)?;
+                }
+
+                // Spend detection: every Orchard action reveals the nullifier of the
+                // note it spends. If that nullifier matches a note we hold, the note
+                // has been spent on-chain (by us or anyone) — flag it so the selector
+                // stops re-spending it. Without this the scan only ever discovers
+                // incoming notes and a just-spent note keeps looking unspent.
+                if note_index.mark_note_spent(&action.nullifier) {
+                    pb.println(format!(
+                        "🔒 Note spent on-chain in block {} (nullifier {})",
+                        block_height,
+                        hex::encode(&action.nullifier)
+                    ));
                 }
 
                 let chosen = match self.decrypt_orchard_action(

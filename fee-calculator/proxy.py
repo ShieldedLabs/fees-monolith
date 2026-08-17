@@ -51,14 +51,16 @@ PRICE_TTL = 300
 
 
 def _sample_loop() -> None:
-    """Poll z_getstandardfee on each new block; append to JSONL history."""
+    """Poll z_getstandardfees on each new block; append to JSONL history."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     last_height: int | None = None
     while True:
         try:
-            response = _zebra_rpc("z_getstandardfee")
-            data = response.get("result", {})
-            height = data.get("height")
+            # As of the v5.0.0 fork rebase the method is z_getstandardfees (plural)
+            # and returns only {standard_fee, priority_fee}; height/congested are gone.
+            # Pull the current height from getblockchaininfo instead.
+            data = _zebra_rpc("z_getstandardfees").get("result", {})
+            height = _zebra_rpc("getblockchaininfo").get("result", {}).get("blocks")
             if height is not None and height != last_height:
                 entry = {
                     "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -72,6 +74,8 @@ def _sample_loop() -> None:
                     f.write(json.dumps(entry) + "\n")
 
                 # Sample the real-transaction fee distribution for the same block.
+                # z_getfeedistribution was re-ported into the NU6.2 fork and returns
+                # height itself, so we read it straight from the result.
                 usage = _zebra_rpc("z_getfeedistribution").get("result", {})
                 usage_entry = {
                     "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -141,7 +145,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _handle_fees(self):
         try:
-            result = _zebra_rpc("z_getstandardfee")
+            result = _zebra_rpc("z_getstandardfees")
             body = json.dumps(result.get("result", result)).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")

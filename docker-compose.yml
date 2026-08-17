@@ -23,6 +23,9 @@ services:
       dockerfile: Dockerfile
       args:
         NO_TLS: "true"
+        # Upstream zaino dev Dockerfile requires RUST_VERSION (no default); pin to the
+        # repo's rust-toolchain.toml channel so `FROM rust:${RUST_VERSION}-bookworm` resolves.
+        RUST_VERSION: "1.95.0"
     restart: unless-stopped
     environment:
       - RUST_LOG=info
@@ -30,7 +33,11 @@ services:
       - ZAINO_NETWORK=Mainnet
       - ZAINO_VALIDATOR_SETTINGS__VALIDATOR_JSONRPC_LISTEN_ADDRESS=zebrad:8232
       - ZAINO_GRPC_SETTINGS__LISTEN_ADDRESS=0.0.0.0:8137
-      - ZAINO_JSON_SERVER_SETTINGS__JSON_RPC_LISTEN_ADDRESS=0.0.0.0:8088
+      # Newer zaino refuses a public (0.0.0.0) JSON-RPC bind without the
+      # allow_unencrypted_public_json_rpc_bind build feature. Loopback satisfies the
+      # check; the gRPC server (8137) is what wallets use. Switch to the feature build
+      # if this JSON-RPC re-expose needs host reachability.
+      - ZAINO_JSON_SERVER_SETTINGS__JSON_RPC_LISTEN_ADDRESS=127.0.0.1:8088
     volumes:
       - /Users/mark/.cache/zaino:/home/container_user/.cache/zaino
       - ./config/zainod.toml:/etc/zaino/zainod.toml:ro

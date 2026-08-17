@@ -129,6 +129,9 @@ pub enum Commands {
     #[command(about = "Display wallet information including addresses and network")]
     Info,
 
+    #[command(about = "Reveal the full 24-word recovery phrase (for backup or migrating to another wallet)")]
+    ExportSeed,
+
     #[command(about = "Display the current shielded balance")]
     Balance,
 
@@ -1149,6 +1152,16 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                 display_mnemonic_safe(&wallet.get_mnemonic())
             );
             println!("⚠️  For security, only partial mnemonic is shown. Use 'restore' command to see full mnemonic.");
+        }
+
+        Commands::ExportSeed => {
+            let (wallet, _storage) = load_wallet().await?;
+            println!("\n⚠️  FULL RECOVERY PHRASE — anyone with these words controls all your funds.");
+            println!("   Do not share, screenshot, or paste them anywhere untrusted.\n");
+            println!("{}", wallet.get_mnemonic());
+            println!(
+                "\n   Restore these 24 words in another wallet (e.g. zKool) with birthday height 3370000."
+            );
         }
 
         Commands::Config {
