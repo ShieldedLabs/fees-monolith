@@ -474,16 +474,6 @@ pub trait ZcashIndexerRpc {
         blocks: Option<i32>,
         height: Option<i32>,
     ) -> Result<GetNetworkSolPsResponse, ErrorObjectOwned>;
-
-    /// Returns the recommended standard fees for the network based on recent
-    /// block data, as specified in the dynamic fees ZIP.
-    ///
-    /// method: post
-    /// tags: blockchain
-    #[method(name = "z_getstandardfee")]
-    async fn z_get_standard_fee(
-        &self,
-    ) -> Result<zaino_state::fee_estimator::StandardFeesResponse, ErrorObjectOwned>;
 }
 
 // Currently all errors are hidden from downstream client, a full fix should be implemented. this is a temporary fix to
@@ -951,22 +941,6 @@ impl<Indexer: ZcashIndexer + LightWalletIndexer> ZcashIndexerRpcServer for JsonR
         self.service_subscriber
             .inner_ref()
             .get_network_sol_ps(blocks, height)
-            .await
-            .map_err(|e| {
-                ErrorObjectOwned::owned(
-                    ErrorCode::InvalidParams.code(),
-                    "Internal server error",
-                    Some(e.to_string()),
-                )
-            })
-    }
-
-    async fn z_get_standard_fee(
-        &self,
-    ) -> Result<zaino_state::fee_estimator::StandardFeesResponse, ErrorObjectOwned> {
-        self.service_subscriber
-            .inner_ref()
-            .z_get_standard_fee()
             .await
             .map_err(|e| {
                 ErrorObjectOwned::owned(

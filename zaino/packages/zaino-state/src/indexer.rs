@@ -586,14 +586,6 @@ pub trait ZcashIndexer: Send + Sync + 'static {
         height: Option<i32>,
     ) -> Result<GetNetworkSolPsResponse, Self::Error>;
 
-    /// Returns the recommended standard fee for the network.
-    ///
-    /// method: post
-    /// tags: blockchain
-    async fn z_get_standard_fee(
-        &self,
-    ) -> Result<crate::fee_estimator::StandardFeesResponse, Self::Error>;
-
     /// Helper function to get the chain height
     async fn chain_height(&self) -> Result<Height, Self::Error>;
 

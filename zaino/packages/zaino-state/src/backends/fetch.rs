@@ -878,17 +878,6 @@ impl ZcashIndexer for FetchServiceSubscriber {
     ) -> Result<GetNetworkSolPsResponse, Self::Error> {
         Ok(self.fetcher.get_network_sol_ps(blocks, height).await?)
     }
-
-    async fn z_get_standard_fee(
-        &self,
-    ) -> Result<crate::fee_estimator::StandardFeesResponse, Self::Error> {
-        // Proxy to zebrad's native z_getstandardfee RPC.
-        // The fee estimation algorithm now lives in the full node.
-        Ok(self
-            .fetcher
-            .json_rpc::<crate::fee_estimator::StandardFeesResponse>("z_getstandardfee")
-            .await?)
-    }
 }
 
 #[async_trait]
