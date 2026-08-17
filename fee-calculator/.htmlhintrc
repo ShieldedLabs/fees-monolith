@@ -1,9 +1,0 @@
-{
-  "tagname-lowercase": false,
-  "attr-lowercase": false,
-  "doctype-first": false,
-  "doctype-html5": true,
-  "id-unique": true,
-  "attr-unsafe-chars": true,
-  "head-script-disabled": false
-}

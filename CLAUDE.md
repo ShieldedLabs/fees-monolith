@@ -1,12 +1,11 @@
 # CLAUDE.md: Dynamic Fees
 
 ## What this is
-Monolith repo for the Zcash dynamic fees effort. Aggregates five git subtrees:
+Monolith repo for the Zcash dynamic fees effort. Aggregates four git subtrees:
 - `zebra/` ← ZcashFoundation/zebra, pristine upstream at v6.3.0 (no fork commits)
 - `zaino/` ← zingolabs/zaino, pristine upstream (no fork commits)
 - `lightwalletd/` ← zcash/lightwalletd, pristine upstream (no fork commits)
 - `zips/` ← zcash/zips (specs; the ZIP drafts are the active work in this repo)
-- `fee-calculator/` ← ShieldedLabs/fee-playground (simulation + visualization)
 
 ## Architecture
 Upstream zebra provides the `getstandardfee` RPC as of v6.3.0
@@ -28,7 +27,6 @@ RFC-style. Dry, technical, precise. No editorializing. Same voice as the zips re
 - `zebra/`: `cd zebra && cargo check -p zebra-rpc`
 - `zaino/`: `cd zaino && cargo check -p zaino-state`
 - `lightwalletd/`: `cd lightwalletd && go build ./...`
-- `fee-calculator/`: `make test`, `make lint`, `make docker-build`
 - `zips/`: `make all-zips` (from the zips/ subdirectory)
 
 ## Subtree commands
@@ -37,7 +35,6 @@ git subtree pull --prefix=zebra https://github.com/ZcashFoundation/zebra.git vX.
 git subtree pull --prefix=zaino https://github.com/zingolabs/zaino.git dev --squash
 git subtree pull --prefix=lightwalletd https://github.com/zcash/lightwalletd.git master --squash
 git subtree pull --prefix=zips https://github.com/zcash/zips.git main --squash
-git subtree pull --prefix=fee-calculator https://github.com/ShieldedLabs/fee-playground.git main --squash
 ```
 
 ## Forum content
