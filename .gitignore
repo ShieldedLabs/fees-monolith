@@ -2,4 +2,4 @@
 target/
 config/zcash.conf
 /*.pdf
-fee-calculator/data/
+.DS_Store
