@@ -135,11 +135,6 @@ Relay policy updates SHOULD ship before or with wallet updates; a 2,000-zatoshi
 transaction reaching a node still on `marginal_fee = 5000` is relayed and mined,
 but incurs the ZIP 401 low fee penalty. Deploy on Testnet before Mainnet.
 
-**Sunset clause.** This ZIP expires 12 months after reaching Active status,
-reverting `marginal_fee` to 5,000 zatoshis unless a follow-up ZIP renews it or a
-dynamic fee mechanism is Active, leaving the static value as a fallback. The
-sunset forces the re-evaluation whose absence motivated this ZIP.
-
 
 # References
 
