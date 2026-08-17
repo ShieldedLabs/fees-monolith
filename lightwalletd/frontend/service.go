@@ -442,36 +442,6 @@ func (s *lwdStreamer) GetLightdInfo(ctx context.Context, in *walletrpc.Empty) (*
 	return lightdinfo, err
 }
 
-// GetStandardFee proxies the z_getstandardfee JSON-RPC call to the full node.
-func (s *lwdStreamer) GetStandardFee(ctx context.Context, in *walletrpc.Empty) (*walletrpc.StandardFeesResponse, error) {
-	result, rpcErr := common.RawRequest("z_getstandardfee", []json.RawMessage{})
-	if rpcErr != nil {
-		return nil, rpcErr
-	}
-
-	var fees struct {
-		StandardFee         uint64 `json:"standard_fee"`
-		PriorityFee         uint64 `json:"priority_fee"`
-		Congested           bool   `json:"congested"`
-		Version             string `json:"version"`
-		Height              uint64 `json:"height"`
-		HowIsThisCalculated string `json:"how_is_this_calculated"`
-	}
-	if err := json.Unmarshal(result, &fees); err != nil {
-		return nil, err
-	}
-
-	resp := &walletrpc.StandardFeesResponse{
-		StandardFee:         fees.StandardFee,
-		PriorityFee:         fees.PriorityFee,
-		Congested:           fees.Congested,
-		Version:             fees.Version,
-		Height:              fees.Height,
-		HowIsThisCalculated: fees.HowIsThisCalculated,
-	}
-	return resp, nil
-}
-
 // SendTransaction forwards raw transaction bytes to a zcashd instance over JSON-RPC
 func (s *lwdStreamer) SendTransaction(ctx context.Context, rawtx *walletrpc.RawTransaction) (*walletrpc.SendResponse, error) {
 	common.Log.Debugf("gRPC SendTransaction(%+v)\n", rawtx)
