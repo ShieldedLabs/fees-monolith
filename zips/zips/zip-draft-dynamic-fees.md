@@ -1,5 +1,5 @@
     ZIP: Unassigned
-    Title: Dynamic Fee Estimation via z_getstandardfee
+    Title: Dynamic Fee Estimation via getstandardfee
     Owners: Mark Henderson <mark@shieldedlabs.net>
     Status: Draft
     Category: Standards / RPC
@@ -24,7 +24,7 @@ The term "zatoshi" is defined as in the Zcash protocol specification.
 
 # Abstract
 
-This ZIP specifies `z_getstandardfee`, a full node RPC endpoint (computed by
+This ZIP specifies `getstandardfee`, a full node RPC endpoint (computed by
 the full node, e.g. Zebra) that publishes a dynamic fee recommendation derived
 from confirmed blocks. Indexers (e.g. Zaino, lightwalletd) relay the result to
 wallets over gRPC. The recommendation is observational: it reflects what the
@@ -95,7 +95,7 @@ This endpoint is observational. Specifically:
 
 # Status
 
-This ZIP defines a **v0 reference candidate** for `z_getstandardfee`. The algorithm
+This ZIP defines a **v0 reference candidate** for `getstandardfee`. The algorithm
 parameters specified below are currently fixed in the canonical Zebra implementation,
 but at least three choices are open to **optional refinement** &mdash; they would change
 only if observed user behavior warrants it. Independent analysis and simulation inform
@@ -122,7 +122,7 @@ Exploratory sweep results (2026-05-09) and the supporting analysis are documente
 
 ## RPC Method
 
-`z_getstandardfee`
+`getstandardfee`
 
 Parameters: None.
 
@@ -131,8 +131,9 @@ Result: A JSON object with the following fields:
 | Field          | Type    | Required | Description                                       |
 |----------------|---------|----------|---------------------------------------------------|
 | `standard_fee` | integer | Yes      | Recommended fee per logical action, in zatoshis.  |
+| `priority_fee` | integer | Yes      | Priority lane fee per logical action, in zatoshis. Always `priority_multiplier` times `standard_fee`. |
+| `congested`    | boolean | Yes      | Whether every block in the lookback window was full, so that no synthetic fill was needed. |
 | `version`      | integer | Yes      | Estimator version identifier (e.g. `0`).          |
-| `height`       | integer | Yes      | The chain tip height at the time of computation.  |
 
 
 ### Example Response
@@ -140,10 +141,29 @@ Result: A JSON object with the following fields:
 ```json
 {
   "standard_fee": 1000,
-  "version": 0,
-  "height": 2750000
+  "priority_fee": 10000,
+  "congested": false,
+  "version": 0
 }
 ```
+
+### The priority lane
+
+`priority_fee` = `standard_fee` × `priority_multiplier`, where
+`priority_multiplier` = 10.
+
+The multiplier MUST NOT exceed the `weight_ratio_cap` of the RECOMMENDED block
+template construction algorithm in ZIP 317 [^zip-0317]. A multiplier above the
+cap would recommend a fee for which conforming block producers deliver no
+corresponding increase in selection probability. ZIP 317 defines
+`weight_ratio_cap` = 4; raising it to 10 is specified separately.
+[^zip-draft-weight-ratio-cap]
+
+`congested` reports whether the priority lane currently buys anything. When
+every block in the lookback window was full, no synthetic fill was required and
+block space is genuinely scarce. When `congested` is false, the standard and
+priority lanes see equivalent inclusion times and wallets SHOULD NOT present
+priority as buying speed.
 
 ### Wallet Integration
 
@@ -170,6 +190,7 @@ vectors (see [Test Vectors](#test-vectors)).
 | b              | 5     | Chain-tip buffer in blocks (3× longer if ZIP 218 ships, see below) |
 | floor          | 1,000 | Synthetic transaction fee per action, in zatoshis                 |
 | block_capacity | 2 MB  | Maximum block size for synthetic fill computation                 |
+| priority_multiplier | 10 | Multiple of `standard_fee` defining the priority lane          |
 
 
 ### Lookback Window
@@ -276,7 +297,7 @@ past, not the block into which a transaction will actually be mined.
 The aim of this section is to sketch, not to specify, the heuristics a future
 estimator version could expose so wallets can give users an informed view of the
 privacy impact of a fee choice *before* they send. Any such heuristic would be
-returned as one or more additional fields on `z_getstandardfee`, gated behind a
+returned as one or more additional fields on `getstandardfee`, gated behind a
 future `version`; v0 returns none of them. The candidate signals below are all
 views of the same anonymity-set quantity:
 
@@ -314,7 +335,7 @@ Published test vectors consist of:
 
 1. A chain slice: an ordered sequence of blocks with their full transaction
    data.
-2. The expected `z_getstandardfee` output for that slice under each estimator
+2. The expected `getstandardfee` output for that slice under each estimator
    version.
 
 Conformance requirement: given the same chain slice, all implementations using
@@ -426,7 +447,7 @@ from predictable fee behavior and reduced orphan risk from oversized mempools.
 
 ## Phase 1: Full node + indexer relay (Policy-only)
 
-The full node (e.g. Zebra) computes `z_getstandardfee` and exposes it as an
+The full node (e.g. Zebra) computes `getstandardfee` and exposes it as an
 informational RPC call. Indexers relay the result to wallets: Zaino re-exposes
 the JSON-RPC method, and lightwalletd exposes it over gRPC. No consensus changes
 or relay policy changes are required.
@@ -437,7 +458,7 @@ test vectors.
 
 ## Phase 2: Wallet Adoption
 
-Wallets should begin using `z_getstandardfee` to inform fee selection UX.
+Wallets should begin using `getstandardfee` to inform fee selection UX.
 
 ## Future: Consensus
 
@@ -477,5 +498,7 @@ recommendation defined here.
 [^zip-0317]: [ZIP 317: Proportional Transfer Fee Mechanism](zip-0317)
 
 [^zip-0401]: [ZIP 401: Addressing Mempool Denial-of-Service](zip-0401)
+
+[^zip-draft-weight-ratio-cap]: [ZIP draft: Raise the Block Template Weight Ratio Cap to 10](zip-draft-weight-ratio-cap)
 
 [^dynamic-fees-lab]: [Zcash Dynamic Fees Lab](https://github.com/ShieldedLabs/fee-playground)

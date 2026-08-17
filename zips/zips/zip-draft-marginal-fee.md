@@ -15,235 +15,130 @@
 The key words "MUST" and "SHOULD" in this document are to be interpreted as
 described in BCP 14 [^BCP14] when, and only when, they appear in all capitals.
 
-The terms "conventional transaction fee", "marginal fee", "logical actions",
-and "grace actions" are as defined in ZIP 317. [^zip-0317]
-
-The term "zatoshi" is defined as in the Zcash protocol specification.
-[^protocol]
+Fee terminology is as defined in ZIP 317 [^zip-0317]; "zatoshi" is as defined in
+the Zcash protocol specification. [^protocol]
 
 
 # Abstract
 
-This ZIP modifies ZIP 317 [^zip-0317] by reducing the `marginal_fee` parameter
-from 5,000 to 1,000 zatoshis per logical action. The conventional fee for a
-minimal 2-action transaction decreases from 10,000 to 2,000 zatoshis. All other
-ZIP 317 parameters and formulae are unchanged.
+This ZIP reduces ZIP 317's [^zip-0317] `marginal_fee` from 5,000 to 1,000
+zatoshis per logical action, lowering the minimal 2-action conventional fee from
+10,000 to 2,000 zatoshis. All other ZIP 317 parameters and formulae are
+unchanged.
 
 
 # Motivation
 
-ZIP 317 was designed in late 2022 when ZEC traded near $30. The `marginal_fee`
-of 5,000 zatoshis per logical action yields a minimum transaction fee of 10,000
-zatoshis (for a 2-action transaction), which at the time cost approximately
-$0.003.
+ZIP 317 was designed in late 2022, when ZEC near the design point *P* = $30 made
+its 10,000-zatoshi minimum fee cost about $0.003. The parameters are static, so
+fiat cost tracks price. At the price of record, $472 (2026-08-11) or ~15.7 *P*:
 
-As ZEC's market price rises, the fiat cost of transactions rises proportionally
-while the fee parameters remain static. Using the design-point price *P* = $30:
+| `marginal_fee` | Min. tx fee    | Fiat cost   | vs. design point |
+|----------------|----------------|-------------|------------------|
+| 5,000          | 10,000 zats    | $0.0472     | 15.7x            |
+| **1,000**      | **2,000 zats** | **$0.0094** | **3.1x**         |
 
-| ZEC price  | `marginal_fee` | Min. tx fee (2 actions) | Fiat cost vs. design point |
-|------------|----------------|-------------------------|----------------------------|
-| *P*        | 5,000          | 10,000 zats             | 1x (baseline)              |
-| 3 *P*      | 5,000          | 10,000 zats             | 3x                         |
-| 10 *P*     | 5,000          | 10,000 zats             | 10x                        |
-| **10 *P*** | **1,000**      | **2,000 zats**          | **2x**                     |
-
-At any price above ~2 *P*, the proposed fee produces a higher fiat-equivalent
-cost than the original design point.
-
-The value `marginal_fee = 1000` was considered during ZIP 317's design
-[^madars-1] but rejected as insufficient for denial-of-service deterrence at
-the design-point price. At current prices the same 2,000 zatoshis represents a
-substantially higher fiat cost than what was rejected as too low.
+The proposed fee exceeds the design-point fiat cost at any price above 5 *P*
+($150), so this is a 5x reduction that does not restore the 2022 level.
+`marginal_fee = 1000` was rejected during ZIP 317's design [^madars-1] as too
+weak a deterrent at $30; at the price of record it costs 3.1x that value.
 
 
 # Privacy Implications
 
-Reducing `marginal_fee` does not change the fee formula's structure. All wallets
-using the updated conventional fee pay the same amount for the same transaction
-shape, preserving the property that fees do not leak transaction construction
-details beyond what is visible in the transaction's public fields.
-
-During the transition period when some wallets use `marginal_fee = 5000` and
-others use `marginal_fee = 1000`, fee heterogeneity could reduce transaction
-privacy by allowing an observer to distinguish between wallet implementations.
-The mitigation is coordinated deployment across wallet implementations.
-
-
-# Requirements
-
-The updated marginal fee:
-
-- Restores the fiat-equivalent transaction cost to near ZIP 317's original
-  design point, given current ZEC market prices.
-- Does not weaken the layered denial-of-service defenses below their original
-  design baseline.
-- Aligns with a powers-of-10 fee alphabet for low fee entropy.
-- Is reversible: includes a sunset clause to force re-evaluation.
-- Does not require a consensus change or network upgrade.
+The formula's structure is unchanged, so wallets pay the same amount for the
+same transaction shape. In transition, wallets split between 5,000 and 1,000 are
+distinguishable by fee; the mitigation is coordinated deployment.
 
 
 # Specification
 
 ## Changes to ZIP 317
 
-In the table in the section **Fee calculation** of ZIP 317 [^zip-0317], the
-row for `marginal_fee` is changed from:
+In the **Fee calculation** table of ZIP 317 [^zip-0317], the `marginal_fee` row
+changes from 5000 to 1000 zatoshis per logical action.
 
-> `marginal_fee` = 5000 zatoshis per logical action
+Every other ZIP 317 parameter, the `conventional_fee` formula, and the
+RECOMMENDED block template construction algorithm are unchanged; `unpaid_actions`
+is defined in terms of `marginal_fee` and reflects the new value automatically.
 
-to:
+The fraction burned by ZIP 235 [^zip-0235] is unchanged: of a 2,000-zatoshi
+fee, 1,200 zatoshis are burned and 800 are paid to the miner.
 
-> `marginal_fee` = 1000 zatoshis per logical action
+## Interaction with the `getstandardfee` RPC endpoint
 
-All other parameters are unchanged:
+The v0 estimator behind the `getstandardfee` RPC endpoint specifies a
+synthetic fill `floor` of 1,000 zatoshis per action: this ZIP's `marginal_fee`.
+The two MUST be kept consistent.
 
-| Parameter                     | Value | Units                  |
-|-------------------------------|-------|------------------------|
-| `marginal_fee`                | 1,000 | zatoshis per logical action |
-| `grace_actions`               | 2     | logical actions        |
-| `p2pkh_standard_input_size`   | 150   | bytes                  |
-| `p2pkh_standard_output_size`  | 34    | bytes                  |
-| `creation_cost`               | 100   | logical actions        |
+## Wallet and node adoption
 
-The formula for `conventional_fee` is unchanged:
+Wallets SHOULD use `marginal_fee = 1000` upon this ZIP reaching Active status.
+ZIP 317 fees are a convention, not a consensus rule, so no network upgrade is
+required, and users MUST retain the ability to override the fee.
 
-$$\mathit{conventional\_fee} = \mathit{marginal\_fee} \times \max(\mathit{grace\_actions},\, \mathit{logical\_actions})$$
-
-For a minimal 2-action transaction: $1000 \times \max(2, 2) = 2000$ zatoshis.
-
-## Block template construction
-
-The recommended algorithm for block template construction in ZIP 317 is
-unchanged. The `block_unpaid_action_limit` of 50 remains. The `unpaid_actions`
-formula continues to use `marginal_fee` and automatically reflects the updated
-value:
-
-$$\mathit{unpaid\_actions}(\mathit{tx}) = \max\!\left(0,\, \max(\mathit{grace\_actions},\, \mathit{tx.logical\_actions}) - \left\lfloor\frac{\mathit{tx.fee}}{\mathit{marginal\_fee}}\right\rfloor\right)$$
-
-## Interaction with ZIP 235
-
-ZIP 235 [^zip-0235] removes 60% of transaction fees from circulation. This ZIP
-does not change that fraction. At the new minimum fee of 2,000 zatoshis: 1,200
-zatoshis are burned and 800 zatoshis are paid to the miner.
-
-## Wallet adoption
-
-Wallets SHOULD use `marginal_fee = 1000` for fee calculation upon this ZIP
-reaching Active status. Since ZIP 317 fees are a wallet convention (not a
-consensus rule), no network upgrade is required.
-
-Users MUST retain the ability to override the recommended fee.
-
-## Node relay policy
-
-Nodes SHOULD update their relay and mempool eviction thresholds to use the
-new `marginal_fee` value. Specifically:
-
-- The `txunpaidactionlimit` threshold (default: 50, as documented in ZIP 317
-  [^zip-0317]) remains unchanged, but the per-transaction `unpaid_actions`
-  computation uses the updated `marginal_fee`.
-- The `low_fee_penalty` in ZIP 401 [^zip-0401] mempool eviction SHOULD be
-  recalibrated to the new conventional fee.
-
-## Node relay policy configuration
-
-Node implementations MUST support a configuration option that overrides the
-default `marginal_fee` used in relay policy calculations (`unpaid_actions`,
-`low_fee_penalty`). The default value is 1,000 zatoshis.
-
-This allows node operators to revert to `marginal_fee = 5000` (or any other
-value) without a software update if network conditions change. This follows the
-existing precedent of `txunpaidactionlimit` and `blockunpaidactionlimit` as
-operator-configurable relay policy parameters documented in ZIP 317.
-[^zip-0317]
+Nodes SHOULD update relay and mempool eviction thresholds to the new value, and
+the ZIP 401 [^zip-0401] `low_fee_penalty` SHOULD be recalibrated. Node
+implementations MUST support a configuration option overriding the relay-policy
+`marginal_fee`, defaulting to 1,000, so operators can revert without a software
+update.
 
 
 # Rationale
 
-## Why 1,000
+**Why a power of 10.** A discrete alphabet (100, 1,000, 10,000) reduces fee
+entropy, simplifies UX, and gives a dynamic fee mechanism natural tier
+boundaries. 500 and 2,500 are off it; 100 is a 50x cut, too low for spam
+deterrence at any plausible price. Even 500 would cost 1.6x the design point at
+the price of record, so alphabet alignment, not denial-of-service headroom, is
+the argument against it.
 
-- **Power of 10.** A fee alphabet with discrete levels (100, 1,000, 10,000,
-  ...) reduces fee entropy for privacy, simplifies UX, and provides natural
-  tier boundaries for any future dynamic fee mechanism.
-- **Historical precedent.** The value was vetted during ZIP 317 development
-  [^madars-1] and rejected only because the fiat cost was too low at the
-  design-point price.
-- **Not 500 or lower.** At current prices, 500 yields a fiat cost near or
-  below the ZIP 317 design point. 100 is a 50x reduction -- too low for
-  meaningful spam deterrence at any reasonable price.
-- **Not 2,000 or 2,500.** Not a power of 10; misaligns with a powers-of-10
-  fee alphabet.
+**Precedent.** ZIP 313 [^zip-0313] set the conventional fee to 1,000 zatoshis in
+2020 as a wallet convention with no network upgrade. Once ZIP 317 obsoleted it,
+that fee bought zero paid actions and drew the low fee penalty. Changing
+`marginal_fee` itself avoids that: a conforming transaction stays fully paid
+under every ZIP 317 formula.
 
-## Why reducing the fee is safe
-
-The marginal fee is one layer in a defense-in-depth stack:
-
-1. `block_unpaid_action_limit` (ZIP 317 [^zip-0317]) caps underpriced actions
-   per block at 50. Zebra currently enforces 0, rejecting any transaction that
-   does not fully pay for its logical actions.
-2. ZIP 401 [^zip-0401] mempool eviction limits memory-based denial of service.
-3. ZIP 235 [^zip-0235] fee burn makes sustained spam permanently costly.
-
-These defenses are independent of the marginal fee level.
-
-## Attack economics
-
-A 2 MB block holds ~1,000 minimal shielded transactions (~2,000 logical
-actions). At 75-second blocks (~48 blocks/hour), the hourly cost to fill
-blocks scales linearly with `marginal_fee` and ZEC price:
-
-| Scenario                      | `marginal_fee` | ZEC price  | Hourly cost      |
-|-------------------------------|----------------|------------|------------------|
-| ZIP 317 design point          | 5,000          | *P*        | *C*              |
-| Price at *N* x *P*            | 5,000          | *N* x *P*  | *N* x *C*        |
-| **Proposed at *N* x *P***     | **1,000**      | *N* x *P*  | ***N* x *C* / 5**|
-
-At *P* ~$30, *C* ~$144/hour. At *N* = 10 the proposed hourly cost (~$288)
-exceeds the original design point by ~2x. Zebra's strict
-`BLOCK_UNPAID_ACTION_LIMIT = 0` makes this table conservative: an attacker
-cannot exploit the unpaid action budget to reduce spam costs.
+**Why this is safe.** The other defense layers are independent of the fee level:
+`block_unpaid_action_limit` caps underpriced actions at 50 per block and Zebra
+enforces 0, ZIP 401 eviction bounds memory denial of service, and ZIP 235 burn
+makes sustained spam permanently costly. Filling 2 MB blocks costs *N* x *C* / 5
+per hour against a design-point *C* ~$144/hour, so ~$453/hour at the price of
+record.
 
 
 # Deployment
 
+## Schedule
+
+This ZIP changes no consensus rule: `marginal_fee` is a wallet convention and a
+node relay policy parameter, so deployment needs no activation height, no
+network upgrade, and no coordination with any upgrade schedule. Only the ZIP
+process and ordinary release cycles bind, which makes a Mainnet target of
+2026-10-01 achievable:
+
+| Date       | Milestone                                                          |
+|------------|--------------------------------------------------------------------|
+| 2026-08-25 | `Discussions-To` filled, PR opened upstream                        |
+| 2026-09-01 | Node implementations land the relay policy change and the override |
+| 2026-09-08 | Testnet                                                            |
+| 2026-09-22 | Wallet releases using `marginal_fee = 1000`                        |
+| 2026-10-01 | Mainnet default                                                    |
+
+There is no flag day: slipping a milestone delays the date without affecting
+correctness, since nodes and wallets on either value interoperate.
+
+
 ## Ordering
 
-Node relay policy updates should be deployed before or concurrently with wallet
-updates. A transaction paying 2,000 zatoshis evaluated by a node still using
-`marginal_fee = 5000` would compute:
+Relay policy updates SHOULD ship before or with wallet updates; a 2,000-zatoshi
+transaction reaching a node still on `marginal_fee = 5000` is relayed and mined,
+but incurs the ZIP 401 low fee penalty. Deploy on Testnet before Mainnet.
 
-$$\mathit{unpaid\_actions} = \max(2, 2) - \left\lfloor\frac{2000}{5000}\right\rfloor = 2 - 0 = 2$$
-
-Such a transaction would still be relayed and mined (it counts against the
-`block_unpaid_action_limit` budget of 50), but would incur the `low_fee_penalty`
-in ZIP 401 mempool eviction on nodes that have not yet updated.
-
-## Testnet
-
-The reduced fee should be deployed on Testnet before Mainnet.
-
-## Sunset clause
-
-This ZIP expires 12 months after reaching Active status. At expiration, the
-`marginal_fee` reverts to 5,000 zatoshis unless:
-
-1. A follow-up ZIP renews or replaces this parameter change, or
-2. A dynamic fee mechanism has reached Active status, in which case the static
-   `marginal_fee` serves only as a fallback value.
-
-The sunset ensures the reduced fee is re-evaluated as conditions change -- the
-same failure mode that motivated this ZIP in the first place.
-
-
-# Open issues
-
-- The `Discussions-To` field needs a GitHub issue URL before this ZIP advances
-  beyond Draft.
-- Whether the 12-month sunset clause duration is appropriate.
-- The node relay policy configuration option name and format need alignment
-  with each node implementation's conventions (e.g. Zebra uses TOML
-  configuration files, zcashd uses CLI flags).
-- Coordination timeline with wallet teams for synchronized deployment.
+**Sunset clause.** This ZIP expires 12 months after reaching Active status,
+reverting `marginal_fee` to 5,000 zatoshis unless a follow-up ZIP renews it or a
+dynamic fee mechanism is Active, leaving the static value as a fallback. The
+sunset forces the re-evaluation whose absence motivated this ZIP.
 
 
 # References
