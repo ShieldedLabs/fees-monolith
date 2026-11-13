@@ -381,20 +381,23 @@
             <code>[chain_tip - reorg_buffer - lookback_window ... chain_tip - reorg_buffer]</code>.
           </p>
           <p>
+            The per-action fee of a transaction is its fee divided by
+            <code>max(grace_actions, logical_actions)</code>, as in ZIP-317.
+            <sup><a href="#ref-zip-0317">[4]</a></sup>
+            Let <code>P</code> be the sequence that holds, for each transaction in <code>T</code>, its per-action
+            fee repeated once per logical action, followed by the synthetic actions defined below.
+          </p>
+          <p>
             The new suggested marginal fee is calculated as
-            <math display="inline" aria-label="median of T fee">
+            <math display="inline" aria-label="median of P">
               <mrow>
                 <mi mathvariant="normal">median</mi>
                 <mo>(</mo>
-                <msub>
-                  <mi>T</mi>
-                  <mi>fee</mi>
-                </msub>
+                <mi>P</mi>
                 <mo>)</mo>
               </mrow>
             </math>.
             The conventional fee calculation remains unchanged as per ZIP-317.
-            <sup><a href="#ref-zip-0317">[4]</a></sup>
           </p>
 
           <details>
@@ -402,46 +405,24 @@
             <ul>
               <li>A reorg buffer of 5 blocks is chosen to balance the need to mitigate reorganization risk with the desire to use recent transaction data for fee calculation.</li>
               <li>A lookback window of 50 blocks (roughly the last hour based on the difficulty algorithm) is selected to provide a sufficient sample size of recent transactions while still being responsive to changes in network conditions.</li>
-              <li>The median is chosen as the method for calculating the marginal fee because it is robust against outliers and provides a more accurate representation of typical transaction fees paid by users. By ensuring that 50% of transactions pay at least the median fee, we can reasonably assume that miners are incentivized to include transactions paying this fee in their blocks.</li>
+              <li>The median is chosen as the method for calculating the marginal fee because it is robust against outliers and provides a more accurate representation of typical transaction fees paid by users. By ensuring that 50% of block space pays at least the median fee, we can reasonably assume that miners are incentivized to include transactions paying this fee in their blocks.</li>
+              <li>The median counts actions, so each fee carries weight in proportion to the block space it buys. A per-transaction median lets many small transactions outvote a few large ones: in a window of large transactions at the floor, 180 two-action transactions could raise the fee tenfold for 0.036 ZEC.</li>
             </ul>
           </details>
 
           <h4>Synthetic Actions</h4>
           <p>
-            Given the same sequence of transactions <code>T</code> as defined above, let synthetic action <code>S</code>
-            be defined as an action with
-            <math display="inline" aria-label="S fee equals fee floor">
-              <mrow>
-                <msub>
-                  <mi>S</mi>
-                  <mi>fee</mi>
-                </msub>
-                <mo>=</mo>
-                <mi>fee_floor</mi>
-              </mrow>
-            </math>
-            and a size of
-            <math display="inline" aria-label="mean of T size">
-              <mrow>
-                <mi mathvariant="normal">mean</mi>
-                <mo>(</mo>
-                <msub>
-                  <mi>T</mi>
-                  <mi>size</mi>
-                </msub>
-                <mo>)</mo>
-              </mrow>
-            </math>.
-          </p>
-          <p>
-            When calculating the median fee, if a block has unused capacity (i.e., fewer actions than the maximum
-            allowed), we fill the empty space with synthetic actions, and then perform the median calculation.
+            A synthetic action has a per-action fee of <code>fee_floor</code> and fills one unused action slot.
+            For each block in the window, add one synthetic action per action slot below the block's maximum
+            allowed actions. If the block's byte limit binds first, add instead its unused bytes divided by the
+            mean bytes per action of the real transactions in <code>T</code>, rounded down.
           </p>
 
           <details>
             <summary>Rationale</summary>
             <ul>
-              <li>By using the average size of real actions for synthetic actions, we ensure that the fee calculation remains realistic and reflective of actual network conditions.</li>
+              <li>Synthetic actions treat the network as always full. Unused capacity votes for the floor, so the fee rises only when real demand fills more than half of the window.</li>
+              <li>With one synthetic action per unused slot, the window always holds the same number of samples: its action capacity. See Security Analysis.</li>
             </ul>
           </details>
 
@@ -485,6 +466,38 @@
             Any transaction UX (wallet or other interface) SHOULD offer the user the standard median fee, and a
             priority fee of <code>median_fee_per_action * priority_multiplier</code>.
           </p>
+        </section>
+
+        <section id="security-analysis">
+          <h3>Security Analysis</h3>
+          <p>
+            Let the window hold <code>W</code> blocks with <code>A</code> maximum actions each, and assume the
+            action limit binds before the byte limit. Every action slot is one entry of <code>P</code>, real or
+            synthetic, so <code>P</code> has exactly <code>N = W × A</code> entries.
+          </p>
+          <p>
+            <strong>Theorem.</strong> The marginal fee is at least <code>X &gt; fee_floor</code> if and only if at
+            least <code>ceiling(N / 2)</code> actions in the window pay <code>X</code> or more per action.
+          </p>
+          <p>
+            <strong>Proof.</strong> The median is the element at 1-based position
+            <code>ceiling((N + 1) / 2)</code> of sorted <code>P</code>. That element is at least <code>X</code>
+            if and only if at most <code>ceiling((N + 1) / 2) − 1 = floor(N / 2)</code> entries are below
+            <code>X</code>, so if and only if at least <code>N − floor(N / 2) = ceiling(N / 2)</code> entries are at
+            or above <code>X</code>. Synthetic entries equal <code>fee_floor &lt; X</code>, so all of these are real
+            actions.
+          </p>
+          <p><strong>Corollaries.</strong></p>
+          <ul>
+            <li>To raise the fee to <code>X</code>, an attacker pays at least <code>X</code> per action on
+              <code>ceiling(N / 2)</code> actions, less the honest actions that already pay <code>X</code>. With
+              <code>W = 151</code> and <code>A = 330</code> (NU7), that is 24,915 actions, or about 2.5 ZEC per
+              window at <code>X = 10,000</code>. The bound holds for every mix of transaction sizes.</li>
+            <li>Windows for blocks <code>W</code> apart share no blocks. Holding the fee at <code>X</code> for
+              <code>D</code> blocks costs at least <code>ceiling(D / W)</code> times the bound.</li>
+            <li>A miner who fills only its own blocks needs more than half of the window's blocks, and pays the
+              ZIP-235 burn on every action.</li>
+          </ul>
         </section>
 
         <section id="reference-implementation">
