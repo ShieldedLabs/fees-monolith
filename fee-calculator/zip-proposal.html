@@ -471,9 +471,9 @@
         <section id="security-analysis">
           <h3>Security Analysis</h3>
           <p>
-            Let the window hold <code>W</code> blocks with <code>A</code> maximum actions each, and assume the
-            action limit binds before the byte limit. Every action slot is one entry of <code>P</code>, real or
-            synthetic, so <code>P</code> has exactly <code>N = W × A</code> entries.
+            Let <code>N</code> be the length of <code>P</code>. The window holds
+            <code>W = lookback_window + 1</code> blocks, because its height range is inclusive. Let each block allow
+            <code>A</code> actions.
           </p>
           <p>
             <strong>Theorem.</strong> The marginal fee is at least <code>X &gt; fee_floor</code> if and only if at
@@ -487,12 +487,22 @@
             or above <code>X</code>. Synthetic entries equal <code>fee_floor &lt; X</code>, so all of these are real
             actions.
           </p>
-          <p><strong>Corollaries.</strong></p>
+          <p>
+            The theorem holds for any <code>N</code>. The cost bounds below need <code>N = W × A</code>. This holds
+            when the action limit binds before the byte limit in every block of the window: then every action slot
+            is one entry of <code>P</code>, real or synthetic. When the byte limit binds first in some blocks, the
+            fallback adds fewer synthetic actions, so <code>N</code> and the cost bounds fall. Bounds for that case
+            are an open question.
+          </p>
+          <p><strong>Corollaries</strong> (action limit binds).</p>
           <ul>
             <li>To raise the fee to <code>X</code>, an attacker pays at least <code>X</code> per action on
-              <code>ceiling(N / 2)</code> actions, less the honest actions that already pay <code>X</code>. With
-              <code>W = 151</code> and <code>A = 330</code> (NU7), that is 24,915 actions, or about 2.5 ZEC per
-              window at <code>X = 10,000</code>. The bound holds for every mix of transaction sizes.</li>
+              <code>ceiling(W × A / 2)</code> actions, less the honest actions that already pay <code>X</code>.
+              The bound holds for every mix of transaction sizes. With the parameters above, <code>W = 51</code>.
+              At <code>A = 330</code> that is 8,415 actions, or about 0.84 ZEC per window at
+              <code>X = 10,000</code>. If NU7 (25-second blocks, ZIP-218) scales <code>reorg_buffer</code> and
+              <code>lookback_window</code> by 3 to keep the same time span, then <code>W = 151</code>: 24,915
+              actions, or about 2.5 ZEC per window.</li>
             <li>Windows for blocks <code>W</code> apart share no blocks. Holding the fee at <code>X</code> for
               <code>D</code> blocks costs at least <code>ceiling(D / W)</code> times the bound.</li>
             <li>A miner who fills only its own blocks needs more than half of the window's blocks, and pays the
