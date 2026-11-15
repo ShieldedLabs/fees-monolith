@@ -343,7 +343,7 @@
               <li>A <code>reorg_buffer</code> of 5 blocks decreases the risk from chain reorganizations and keeps the data recent.</li>
               <li>A <code>lookback_window</code> of 50 blocks is approximately one hour. The sample is large, and the fee follows changes in network conditions.</li>
               <li>Outliers have a small effect on the median.</li>
-              <li>The median counts actions, so each fee has weight in proportion to the block space that it buys. If large transactions at the floor fill the window, a per-transaction median lets 180 two-action transactions increase the fee by a factor of 10 for 0.036 ZEC.</li>
+              <li>The median counts actions, so each fee has weight in proportion to the block space that it buys. If large transactions at the floor fill the window, a per-action median lets 180 two-action transactions increase the fee by a factor of 10 for 0.036 ZEC.</li>
             </ul>
           </details>
 
