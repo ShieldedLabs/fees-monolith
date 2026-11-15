@@ -198,35 +198,14 @@
             describes. This rule applies only when these key words are in all capitals.
           </p>
           <p>
-            This document uses the character § to refer to sections of the Zcash Protocol Specification.
+            The character § refers to sections of the Zcash Protocol Specification.
             <sup><a href="#ref-protocol">[2]</a></sup>
           </p>
           <p>
             The terms "actions", "conventional fee", and "marginal fee" have the definitions that ZIP 317 gives.
             <sup><a href="#ref-zip-0317">[4]</a></sup>
-          </p>
-          <p>
-            The term "reorg buffer" refers to a number of blocks before the chain tip. The fee calculation uses only
-            blocks that are older than these blocks. This decreases the risk from chain reorganizations.
-          </p>
-          <p>
-            The term "lookback window" refers to the number of blocks before the chain tip that the fee calculation
-            uses. From the comparable transactions in these blocks, the calculation computes statistics for the fee.
-          </p>
-          <p>
-            The term "fee floor" (or "floor") refers to the minimum price in the fee calculation.
-          </p>
-          <p>
-            The term "priority multiplier" (or "multiplier") refers to a factor. If the user selects priority
-            processing, the transaction fee is multiplied by this factor.
-          </p>
-          <p>
-            The term "comparables" (or "comps") refers to previous transactions. The fee calculation uses the fees and
-            actions of these transactions to find the correct fee for a new transaction.
-          </p>
-          <p>
-            The fields <code>nIssueActions</code>, <code>fee</code>, and <code>nExpiryHeight</code> of a Version 6
-            transaction have the definitions that ZIP 230 gives.
+            The fields <code>fee</code> and <code>nExpiryHeight</code> of a Version 6 transaction have the definitions
+            that ZIP 230 gives.
             <sup><a href="#ref-zip-0230">[5]</a></sup>
           </p>
         </section>
@@ -234,104 +213,47 @@
         <section id="abstract">
           <h3>Abstract</h3>
           <p>
-            This ZIP defines a dynamic pricing mechanism. The mechanism calculates the median of comparable prices
-            that users paid in previous blocks.
-          </p>
-          <p>
-            First, the mechanism can operate as simple policy changes in nodes and wallets. A later network upgrade
-            can then harden the mechanism into consensus rules. The design keeps the core privacy assumptions of
-            Zcash. The only explicit on-chain metadata of the design is the fee that the user pays.
+            This ZIP defines a dynamic fee mechanism. The marginal fee is the median per-action fee that users paid in
+            recent blocks. The mechanism starts as node and wallet policy. A later network upgrade can harden it
+            into consensus rules. The only new on-chain metadata is the fee that the user pays.
           </p>
         </section>
 
         <section id="motivation">
           <h3>Motivation</h3>
           <p>
-            The price of ZEC is now less stable than before, and the price also increased quickly. As a result,
-            transaction fees increased to prices that users now think are too high. New conditions in the environment
-            possibly indicate higher transaction volume in the near future. Examples are an increase in adoption and
-            the start of Zcash Digital Asset Treasuries.
+            The price of ZEC increased quickly and is now less stable. As a result, fees increased to prices that
+            users think are too high. A decrease of the ZIP 317 marginal fee is a short-term fix only. Each change of
+            the marginal fee makes wallet updates necessary across the ecosystem. An automatic mechanism removes this
+            problem and adjusts the fee to price volatility and to changes in demand.
           </p>
           <p>
-            Short-term methods are available. The simplest method is to decrease the ZIP 317 marginal fee. But a
-            short-term method can be too weak over a long period, and it can be necessary to adjust it at intervals.
-            As a result, a dynamic fee calculation is necessary for two purposes:
+            The fee is easy to explain, stays low, and changes rarely. A user can pay a higher fee for reliable
+            inclusion when demand increases quickly.
           </p>
-          <ul>
-            <li>To operate correctly during short periods of price volatility.</li>
-            <li>To adjust the marginal fee over time as conditions change.</li>
-          </ul>
-
-          <p class="zip-note">
-            <strong>TODO:</strong> Give the reasons for the complexity of this method, compared to an adjustment of
-            the ZIP 317 marginal fee. At this time, it is difficult to adjust the marginal fee across the ecosystem.
-            Specifically, an increase of the marginal fee always makes wallet updates necessary. An automatic
-            mechanism that adjusts the fee removes this problem.
-          </p>
-
-          <h4>Good UX</h4>
-          <ul>
-            <li>The design gives a clear and consistent user experience:
-              <ul>
-                <li>Fees are easy to understand and easy to explain.</li>
-                <li>Fees stay low and change rarely.</li>
-                <li>When network conditions are stable, transactions are reliable.</li>
-                <li>A user can pay a higher fee to make sure that a transaction is reliable, even when demand increases quickly.</li>
-              </ul>
-            </li>
-          </ul>
-
-          <p class="zip-note"><strong>Remove this item or write it again:</strong></p>
-          <ul>
-            <li>The fee increases quickly during congestion and decreases slowly to normal prices.</li>
-          </ul>
         </section>
 
         <section id="privacy-implications">
           <h3>Privacy Implications</h3>
           <p>
-            This design tries to keep to a minimum the information that leaks about the user. The design also lets
-            the user select a higher rate for priority processing. This gives a better user experience.
-          </p>
-          <p>Two effects operate together:</p>
-          <ul>
-            <li>The user selects one of two fee levels (priority or standard). This selection adds one bit of information.</li>
-            <li>Fees are rounded to powers of 10.</li>
-          </ul>
-          <p>The total result of these two effects is a decrease in the fee entropy that leaks.</p>
-          <p>
-            This design probably makes it necessary to trust the lightwallet when it relays the fees. This trust is
-            compatible with the current threat model for wallet apps.
+            Fees are powers of 10. The user selects one of two fee levels (standard or priority), which adds one bit of
+            information. A light wallet trusts its server to relay the fee. The current wallet threat model already
+            includes this trust.
             <sup><a href="#ref-wallet-threat-model">[6]</a></sup>
           </p>
         </section>
 
         <section id="requirements">
           <h3>Requirements</h3>
-          <p>A successful design and implementation:</p>
+          <p>A successful design:</p>
           <ul>
             <li>Keeps to a minimum the user information that leaks by accident.</li>
             <li>Computes the conventional fee from public information only.</li>
-            <li>Keeps the fee approximately stable in economic value, even when the economic value of ZEC changes by large amounts.</li>
+            <li>Keeps the fee approximately stable in economic value when the price of ZEC changes by large amounts.</li>
             <li>Gives miners a reason to include honest transactions in blocks.</li>
-            <li>Makes griefing attacks expensive:
-              <ul>
-                <li>An attack that prevents honest transactions costs more than honest users will pay. This is true at least for the total over the lookback window.</li>
-              </ul>
-            </li>
-            <li>Prevents miners from using the protocol rules to increase the fees that users pay.</li>
-            <li>Is easy to implement and deploy:
-              <ul>
-                <li>It is compatible with current and planned network upgrades. These upgrades are the NSM contributions of ZIP 235 and the action-based accounting of ZIP 317.</li>
-                <li>It starts as policy. Minimal consensus upgrades harden it later.</li>
-                <li>It keeps consensus rules stateless and keeps calculations to a minimum.</li>
-              </ul>
-            </li>
-          </ul>
-
-          <p class="zip-note"><strong>Remove:</strong></p>
-          <ul>
-            <li>Keeps the user experience approximately as good as it is now.</li>
+            <li>Makes an attack that prevents honest transactions cost more than honest users pay over the window.</li>
+            <li>Makes sure that miners cannot use the protocol rules to increase the fees that users pay.</li>
+            <li>Is compatible with the NSM contributions of ZIP 235 and the action-based accounting of ZIP 317, and keeps consensus rules stateless and simple.</li>
           </ul>
         </section>
 
@@ -356,16 +278,10 @@
             as §7.7.3 "Difficulty Adjustment"
             <sup><a href="#ref-protocol-diffadjustment">[3]</a></sup>
             defines them. The definition is <code>median(S) = sorted(S)[ceiling((length(S) + 1) / 2)]</code>, with
-            1-based indexes. If <code>S</code> has an even length, the median is exactly the upper of the two middle
-            elements.
+            1-based indexes. If <code>S</code> has an even length, the median is the upper of the two middle elements.
           </p>
 
           <h4>Marginal Fee Calculation</h4>
-          <p>
-            This specification defines the new parameters in the table below. The calculation of the new marginal fee
-            uses these parameters.
-          </p>
-
           <table aria-label="Marginal fee parameters">
             <thead>
               <tr>
@@ -393,10 +309,10 @@
             </tbody>
           </table>
 
-          <p>The value <code>chain_tip</code> is the height of the latest known block.</p>
           <p>
-            The sequence <code>T</code> contains the transactions in the blocks with heights
-            <code>[chain_tip - reorg_buffer - lookback_window ... chain_tip - reorg_buffer]</code>.
+            The value <code>chain_tip</code> is the height of the latest known block. The window is the blocks with
+            heights <code>[chain_tip - reorg_buffer - lookback_window ... chain_tip - reorg_buffer]</code>. The
+            sequence <code>T</code> contains the transactions in the window.
           </p>
           <p>
             The per-action fee of a transaction is its fee divided by
@@ -409,7 +325,7 @@
             <li>The synthetic actions that the Synthetic Actions section defines.</li>
           </ol>
           <p>
-            The new marginal fee is a suggested value. It is calculated as
+            The new marginal fee is a suggested value, equal to
             <math display="inline" aria-label="median of P">
               <mrow>
                 <mi mathvariant="normal">median</mi>
@@ -424,17 +340,17 @@
           <details>
             <summary>Rationale</summary>
             <ul>
-              <li>The reorg buffer is 5 blocks. This value is a balance between two requirements: to decrease the risk from chain reorganizations, and to use recent transaction data for the fee calculation.</li>
-              <li>The lookback window is 50 blocks. Because of the difficulty algorithm, 50 blocks are approximately the last hour. This window gives a sample of recent transactions that is large enough. The window is also short enough that the fee changes when network conditions change.</li>
-              <li>The marginal fee calculation uses the median for two reasons. Outliers have a small effect on the median. Also, the median shows more accurately the typical fees that users pay. The median makes sure that 50% of block space pays at least the median fee. As a result, miners probably have a reason to include transactions that pay this fee in their blocks.</li>
-              <li>The median counts actions. As a result, the weight of each fee is in proportion to the block space that the fee buys. A median per transaction lets many small transactions have more votes than a small number of large transactions. For example, the window can hold large transactions at the floor. Then 180 two-action transactions can increase the fee by a factor of 10 for 0.036 ZEC.</li>
+              <li>A <code>reorg_buffer</code> of 5 blocks decreases the risk from chain reorganizations and keeps the data recent.</li>
+              <li>A <code>lookback_window</code> of 50 blocks is approximately one hour. The sample is large, and the fee follows changes in network conditions.</li>
+              <li>Outliers have a small effect on the median.</li>
+              <li>The median counts actions, so each fee has weight in proportion to the block space that it buys. If large transactions at the floor fill the window, a per-transaction median lets 180 two-action transactions increase the fee by a factor of 10 for 0.036 ZEC.</li>
             </ul>
           </details>
 
           <h4>Synthetic Actions</h4>
           <p>
-            A synthetic action has a per-action fee of <code>fee_floor</code>. Each synthetic action fills one unused
-            action slot. For each block in the window, add synthetic actions as follows:
+            A synthetic action has a per-action fee of <code>fee_floor</code> and fills one unused action slot. For
+            each block in the window, add synthetic actions as follows:
           </p>
           <ul>
             <li>If the action limit of the block binds first, add one synthetic action for each unused action slot below the action limit.</li>
@@ -446,16 +362,12 @@
 
           <details>
             <summary>Rationale</summary>
-            <ul>
-              <li>Synthetic actions make the calculation treat the network as always full. Unused capacity votes for the floor. As a result, the fee increases only when real demand fills at least half of the window.</li>
-              <li>Each unused slot gets one synthetic action. When the action limit binds, the window holds the same number of samples in each calculation. This number is the action capacity of the window. Refer to Security Analysis.</li>
-            </ul>
+            <p>Unused capacity votes for <code>fee_floor</code>, so the fee increases only under real demand. The Security Analysis gives the exact condition.</p>
           </details>
 
           <h4>New Rules</h4>
           <p>
-            At first, relay policy can apply the rules that follow. A future network upgrade can then harden these
-            rules into consensus rules.
+            Relay policy applies these rules first. A future network upgrade can harden them into consensus rules.
           </p>
           <ul>
             <li>The per-action fee MUST be at least <code>fee_floor</code> zats.</li>
@@ -482,15 +394,12 @@
 
           <details>
             <summary>Rationale</summary>
-            <ul>
-              <li>An expiry height in this range makes sure that a transaction with an incorrect fee stays in the mempool for a short time only.</li>
-            </ul>
+            <p>This expiry range limits the time that a transaction with an incorrect fee stays in the mempool.</p>
           </details>
 
           <h4>Wallet Construction</h4>
           <p>
-            Each user interface for transactions (a wallet or other interface) SHOULD let the user select one of two
-            fees:
+            Each user interface for transactions SHOULD let the user select one of two fees:
           </p>
           <ul>
             <li>The standard fee, which is the median fee.</li>
@@ -501,9 +410,8 @@
         <section id="security-analysis">
           <h3>Security Analysis</h3>
           <p>
-            The value <code>N</code> is the length of <code>P</code>. The window holds
-            <code>W = lookback_window + 1</code> blocks, because its height range includes both end heights. Each
-            block can hold <code>A</code> actions.
+            <code>N</code> is the length of <code>P</code>. The window holds <code>W = lookback_window + 1</code>
+            blocks (the range includes both end heights). Each block can hold <code>A</code> actions.
           </p>
           <p>
             <strong>Theorem.</strong> The marginal fee is at least <code>X &gt; fee_floor</code> if and only if at
@@ -519,13 +427,10 @@
           </p>
           <p>
             The theorem is true for all values of <code>N</code>. The cost bounds below apply when
-            <code>N = W × A</code>. This condition is true when the action limit binds before the byte limit in every
-            block of the window. In that case, each action slot is one entry of <code>P</code>, real or synthetic.
-          </p>
-          <p>
-            The cap on synthetic actions keeps <code>N ≤ W × A</code> in all cases. When the byte limit binds first in
-            some blocks, the fallback can add fewer synthetic actions. Then <code>N</code> and the cost bounds
-            decrease. Bounds for that case are unknown at this time.
+            <code>N = W × A</code>, which is true when the action limit binds before the byte limit in every block of
+            the window. The cap on synthetic actions keeps <code>N ≤ W × A</code> in all cases. When the byte limit
+            binds first, the fallback can add fewer synthetic actions, and <code>N</code> and the cost bounds decrease.
+            Bounds for that case are unknown at this time.
           </p>
           <p><strong>Corollaries</strong> (when the action limit binds).</p>
           <ul>
